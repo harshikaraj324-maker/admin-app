@@ -1,148 +1,112 @@
 import { useState } from "react";
-import { CheckCircle, Copy, ExternalLink, Zap, Database } from "lucide-react";
-import { getSetupSQL, checkSetupDone } from "@/lib/supabase";
+import { Shield, ExternalLink, Eye, EyeOff, CheckCircle, AlertCircle, Key } from "lucide-react";
+import { runSetupWithPAT, checkSetupDone } from "@/lib/supabase";
 
-interface SetupProps {
-  onDone: () => void;
-}
+interface SetupProps { onDone: () => void; }
 
 export default function Setup({ onDone }: SetupProps) {
-  const [copied, setCopied] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState("");
+  const [pat, setPat] = useState("");
+  const [show, setShow] = useState(false);
+  const [step, setStep] = useState<"idle" | "running" | "done" | "error">("idle");
+  const [msg, setMsg] = useState("");
 
-  const sql = getSetupSQL();
-
-  const copySQL = async () => {
-    await navigator.clipboard.writeText(sql);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2500);
-  };
-
-  const verify = async () => {
-    setChecking(true);
-    setError("");
+  const run = async () => {
+    if (!pat.trim()) { setMsg("Personal Access Token dalo."); setStep("error"); return; }
+    setStep("running"); setMsg("");
     try {
+      await runSetupWithPAT(pat.trim());
       const ok = await checkSetupDone();
-      if (ok) {
-        onDone();
-      } else {
-        setError(
-          "Table abhi bhi nahi mili. Supabase SQL Editor mein SQL chalao, phir dobara try karo."
-        );
-      }
-    } catch {
-      setError("Connection error. Supabase credentials check karo.");
-    } finally {
-      setChecking(false);
+      if (!ok) throw new Error("Tables verify nahi huyi. Dobara try karo.");
+      setStep("done");
+      setTimeout(onDone, 1200);
+    } catch (e: unknown) {
+      setStep("error");
+      setMsg(e instanceof Error ? e.message : "Unknown error");
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#080c16] text-white flex items-center justify-center p-5">
-      <div className="w-full max-w-2xl">
+    <div className="min-h-screen bg-[#080c16] flex items-center justify-center p-6">
+      <div className="w-full max-w-md">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-900/40">
-            <Database className="w-5 h-5" />
+        <div className="text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-7 h-7 text-blue-400" />
           </div>
-          <div>
-            <h1 className="text-lg font-semibold">Ek Baar Setup Karo</h1>
-            <p className="text-sm text-slate-500">
-              Ye SQL ek baar chalao — uske baad sab automatic ho jaayega
-            </p>
-          </div>
-        </div>
-
-        {/* Highlight banner */}
-        <div className="flex items-start gap-3 bg-blue-900/20 border border-blue-700/30 rounded-2xl px-4 py-3.5 mb-5">
-          <Zap className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-blue-200 leading-relaxed">
-            Ye SQL sirf <strong>ek baar</strong> run karna hai. Uske baad jab bhi naya token
-            banaaoge — table <strong>automatically create</strong> ho jaayegi, baar baar SQL
-            editor kholna nahi padega.
+          <h1 className="text-xl font-bold text-white">Pehli Baar Setup</h1>
+          <p className="text-slate-500 text-sm mt-2">
+            Ek baar karo — uske baad sab automatic
           </p>
         </div>
 
-        {/* SQL block */}
-        <div className="bg-[#0d1220] border border-slate-700/50 rounded-2xl overflow-hidden mb-4">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
-            <span className="text-xs font-medium text-slate-400">Setup SQL</span>
-            <div className="flex items-center gap-2">
-              <a
-                href="https://supabase.com/dashboard/project/imfwqoocwfvvtjghgofi/sql/new"
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                SQL Editor <ExternalLink className="w-3 h-3" />
-              </a>
-              <button
-                onClick={copySQL}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-xs transition-colors"
-              >
-                {copied ? (
-                  <><CheckCircle className="w-3 h-3 text-emerald-400" /> Copied!</>
-                ) : (
-                  <><Copy className="w-3 h-3" /> Copy SQL</>
+        {/* Steps */}
+        <div className="bg-[#0d1220] border border-slate-800 rounded-2xl p-5 mb-5 space-y-3">
+          {[
+            { n: 1, text: "Supabase Dashboard kholein", link: "https://supabase.com/dashboard/account/tokens", linkText: "Account → Access Tokens" },
+            { n: 2, text: "\"Generate new token\" dabao, copy karo" },
+            { n: 3, text: "Niche paste karo → Initialize dabao" },
+          ].map(({ n, text, link, linkText }) => (
+            <div key={n} className="flex items-start gap-3">
+              <span className="w-5 h-5 rounded-full bg-blue-600/20 border border-blue-500/30 text-blue-400 text-xs flex items-center justify-center flex-shrink-0 mt-0.5 font-semibold">{n}</span>
+              <p className="text-sm text-slate-400">
+                {text}{" "}
+                {link && (
+                  <a href={link} target="_blank" rel="noreferrer"
+                     className="text-blue-400 hover:text-blue-300 inline-flex items-center gap-0.5">
+                    {linkText} <ExternalLink className="w-3 h-3" />
+                  </a>
                 )}
-              </button>
+              </p>
             </div>
-          </div>
-          <pre className="p-4 text-xs font-mono text-slate-300 overflow-x-auto leading-relaxed whitespace-pre max-h-72 overflow-y-auto">
-            {sql}
-          </pre>
+          ))}
         </div>
 
-        {/* Instructions */}
-        <ol className="space-y-2 mb-5">
-          {[
-            <>Upar "Copy SQL" dabao</>,
-            <>
-              <a
-                href="https://supabase.com/dashboard/project/imfwqoocwfvvtjghgofi/sql/new"
-                target="_blank"
-                rel="noreferrer"
-                className="text-blue-400 hover:text-blue-300 underline underline-offset-2"
-              >
-                Supabase SQL Editor
-              </a>{" "}
-              kholein aur paste karke Run karein
-            </>,
-            <>Niche "Setup Complete" dabao</>,
-          ].map((step, i) => (
-            <li key={i} className="flex items-start gap-3 text-sm text-slate-400">
-              <span className="w-5 h-5 rounded-full bg-slate-800 border border-slate-700 text-xs flex items-center justify-center flex-shrink-0 mt-0.5 font-medium">
-                {i + 1}
-              </span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
+        {/* PAT input */}
+        <div className="relative mb-3">
+          <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+          <input
+            type={show ? "text" : "password"}
+            value={pat}
+            onChange={(e) => setPat(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="sbp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+            className="w-full bg-[#0d1220] border border-slate-700 rounded-xl pl-10 pr-10 py-3 text-sm font-mono text-slate-300 placeholder-slate-700 focus:outline-none focus:border-blue-500/60 transition-colors"
+          />
+          <button onClick={() => setShow(!show)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors">
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </button>
+        </div>
 
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-red-900/25 border border-red-700/40 text-sm text-red-400">
-            {error}
+        {/* Message */}
+        {step === "error" && msg && (
+          <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-3">
+            <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+            <p className="text-sm text-red-400">{msg}</p>
+          </div>
+        )}
+        {step === "done" && (
+          <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-3">
+            <CheckCircle className="w-4 h-4 text-emerald-400" />
+            <p className="text-sm text-emerald-400">Setup complete! Dashboard khul raha hai…</p>
           </div>
         )}
 
-        <button
-          onClick={verify}
-          disabled={checking}
-          className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold transition-colors flex items-center justify-center gap-2"
-        >
-          {checking ? (
-            <>
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Verify ho raha hai...
-            </>
+        {/* Button */}
+        <button onClick={run} disabled={step === "running" || step === "done"}
+                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+          {step === "running" ? (
+            <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Initialize ho raha hai…</>
+          ) : step === "done" ? (
+            <><CheckCircle className="w-4 h-4" />Done!</>
           ) : (
-            <>
-              <CheckCircle className="w-4 h-4" />
-              Setup Complete — Dashboard kholein
-            </>
+            "Initialize Supabase →"
           )}
         </button>
+
+        <p className="text-center text-xs text-slate-700 mt-4">
+          Token sirf setup ke liye use hota hai, store nahi hota.
+        </p>
       </div>
     </div>
   );
