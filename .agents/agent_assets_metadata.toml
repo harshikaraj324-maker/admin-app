@@ -12,3 +12,9 @@ id = "qGOEa-zK2uIRzvPh-GOXh"
 uri = "file://attached_assets/android_v2_single_supabase.zip"
 type = "unspecified"
 title = "Android — Single Supabase (imfwqoocwfvvtjghgofi) — 13 files"
+
+[[outputs]]
+id = "5aRxyOStuZLKzZIlZA-xJ"
+uri = "file://attached_assets/android_v3_complete.zip"
+type = "unspecified"
+title = "android_v3_complete.zip — 12 changed Kotlin files"
