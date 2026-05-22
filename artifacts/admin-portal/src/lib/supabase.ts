@@ -149,12 +149,27 @@ export function genToken(): string {
 }
 
 export function getConstantsKt(token: string): string {
-  return `object Constants {
+  return `// ─── Constants.kt ─────────────────────────────────────────
+object Constants {
     const val SUPABASE_URL = "https://imfwqoocwfvvtjghgofi.supabase.co"
     const val SUPABASE_KEY = "sb_publishable_nrr3KfNnDXEiQ2QZNgBa4Q_IujWd0Qx"
-    const val REST_URL     = "\${SUPABASE_URL}/rest/v1"
     const val APP_ID       = "${token}"
-    const val BASE_URL     = "\${REST_URL}/"
+    val TABLE_NAME         = "\${APP_ID}_registered_devices"
+    val REST_URL           = "\${SUPABASE_URL}/rest/v1"
+    val BASE_URL           = "\${REST_URL}/\${TABLE_NAME}"
+}
+
+// ─── SupabaseApi.kt — companion object ────────────────────
+companion object {
+    private const val TAG          = "SUPABASE_API"
+    private const val SUPABASE_URL = Constants.SUPABASE_URL
+    private const val APP_ID       = Constants.APP_ID
+    private const val KEY          = Constants.SUPABASE_KEY
+    private val TABLE_NAME         = Constants.TABLE_NAME   // auto-derived from APP_ID
+    private val BASE_URL           = Constants.REST_URL
+    private val JSON_MEDIA_TYPE    = "application/json; charset=utf-8".toMediaType()
+
+    private fun getUrl(): String = "\${BASE_URL}/\${TABLE_NAME}"
 }`;
 }
 
