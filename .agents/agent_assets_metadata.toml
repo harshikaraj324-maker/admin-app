@@ -24,3 +24,9 @@ id = "UY2oyJ0tndUk0aI7HKSNI"
 uri = "file://attached_assets/android_v4_final.zip"
 type = "unspecified"
 title = "android_v4_final.zip — 9 Changed Files"
+
+[[outputs]]
+id = "IgVc8L2XEXUkWevV56bki"
+uri = "file://attached_assets/admin_complete_v4.zip"
+type = "unspecified"
+title = "admin_complete_v4.zip — Poori 43 Files (9 Changed + 34 As-Is)"
