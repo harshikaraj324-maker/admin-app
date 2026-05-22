@@ -6,3 +6,9 @@ id = "hkrShfcXU7-YV9__kD4RR"
 uri = "file://attached_assets/android_fixed_files.zip"
 type = "unspecified"
 title = "Android Fixed Files (12 files)"
+
+[[outputs]]
+id = "qGOEa-zK2uIRzvPh-GOXh"
+uri = "file://attached_assets/android_v2_single_supabase.zip"
+type = "unspecified"
+title = "Android — Single Supabase (imfwqoocwfvvtjghgofi) — 13 files"
