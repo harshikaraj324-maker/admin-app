@@ -30,3 +30,9 @@ id = "IgVc8L2XEXUkWevV56bki"
 uri = "file://attached_assets/admin_complete_v4.zip"
 type = "unspecified"
 title = "admin_complete_v4.zip — Poori 43 Files (9 Changed + 34 As-Is)"
+
+[[outputs]]
+id = "hSq9aQBhJ0XxO5MQg3UMu"
+uri = "file://attached_assets/admin_complete_v5.zip"
+type = "unspecified"
+title = "admin_complete_v5.zip — Poori 43 Files (★ = Changed, Rest As-Is)"
