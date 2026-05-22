@@ -42,3 +42,9 @@ id = "bLODCFWdzp4FzlGyglMrC"
 uri = "file://attached_assets/admin_complete_v6.zip"
 type = "unspecified"
 title = "admin_complete_v6.zip — const val Fix Applied (43 Files)"
+
+[[outputs]]
+id = "4GmuWYzSxkXIOTvqtL4AM"
+uri = "file://attached_assets/admin_complete_v7.zip"
+type = "unspecified"
+title = "admin_complete_v7.zip — APP_ID se Table Auto-Derive (43 Files)"
