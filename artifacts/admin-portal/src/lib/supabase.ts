@@ -3,6 +3,16 @@ import type { AdminApp, Device, AppStats } from "./types";
 // All calls go through our Express backend — no Supabase key on frontend
 const API = "/api/admin";
 
+const PAT_KEY = "supabase_pat";
+
+export function savePat(pat: string) {
+  localStorage.setItem(PAT_KEY, pat);
+}
+
+export function getPat(): string {
+  return localStorage.getItem(PAT_KEY) ?? "";
+}
+
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(`${API}${path}`, {
     ...init,
@@ -27,8 +37,11 @@ export async function checkSetupDone(): Promise<boolean> {
   }
 }
 
-export async function runSetup(): Promise<void> {
-  const res = await apiFetch("/setup/init", { method: "POST" });
+export async function runSetup(pat: string): Promise<void> {
+  const res = await apiFetch("/setup/init", {
+    method: "POST",
+    body: JSON.stringify({ pat }),
+  });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
       error?: string;
@@ -45,10 +58,14 @@ export async function getApps(): Promise<AdminApp[]> {
   return res.json() as Promise<AdminApp[]>;
 }
 
-export async function createApp(token: string, label: string): Promise<AdminApp> {
+export async function createApp(
+  token: string,
+  label: string,
+  pat: string
+): Promise<AdminApp> {
   const res = await apiFetch("/apps", {
     method: "POST",
-    body: JSON.stringify({ token, label }),
+    body: JSON.stringify({ token, label, pat }),
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({ error: res.statusText }))) as {

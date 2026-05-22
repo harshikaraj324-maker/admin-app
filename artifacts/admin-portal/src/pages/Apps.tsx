@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Trash2, Power, PowerOff, RefreshCw,
-  Smartphone, ChevronRight, Copy, CheckCircle, X
+  Smartphone, ChevronRight, Copy, CheckCircle, X, Key
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import type { AdminApp } from "@/lib/types";
-import { getApps, createApp, updateApp, deleteApp, genToken, getConstantsKt } from "@/lib/supabase";
+import { getApps, createApp, updateApp, deleteApp, genToken, getConstantsKt, getPat, savePat } from "@/lib/supabase";
 
 interface AppsProps { onOpenApp: (app: AdminApp) => void; }
 
@@ -17,6 +17,7 @@ export default function Apps({ onOpenApp }: AppsProps) {
   const [showForm, setShowForm] = useState(false);
   const [fLabel, setFLabel] = useState("");
   const [fToken, setFToken] = useState(genToken());
+  const [fPat, setFPat] = useState(getPat());
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [createErr, setCreateErr] = useState("");
@@ -42,9 +43,11 @@ export default function Apps({ onOpenApp }: AppsProps) {
   const handleCreate = async () => {
     const tok = fToken.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
     if (!tok) return;
+    if (!fPat.trim()) { setCreateErr("PAT required — setup page se copy karo ya daalo"); return; }
     setCreating(true); setCreateErr(""); setCreateMsg("Supabase mein table ban rahi hai…");
     try {
-      const a = await createApp(tok, fLabel.trim());
+      savePat(fPat.trim());
+      const a = await createApp(tok, fLabel.trim(), fPat.trim());
       setApps((p) => [a, ...p]);
       setShowForm(false); setFToken(genToken()); setFLabel(""); setCreateMsg("");
     } catch (e: unknown) {
@@ -79,7 +82,7 @@ export default function Apps({ onOpenApp }: AppsProps) {
                   className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors disabled:opacity-50">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
-          <button onClick={() => { setShowForm(true); setCreateErr(""); setCreateMsg(""); }}
+          <button onClick={() => { setShowForm(true); setCreateErr(""); setCreateMsg(""); setFPat(getPat()); }}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-medium transition-colors">
             <Plus className="w-3.5 h-3.5" />New App
           </button>
@@ -122,6 +125,22 @@ export default function Apps({ onOpenApp }: AppsProps) {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* PAT field */}
+            <div className="mb-4">
+              <label className="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5 font-medium">
+                <Key className="w-3 h-3" />
+                Supabase PAT
+                {fPat && <span className="text-emerald-500 text-[10px]">✓ saved</span>}
+              </label>
+              <input
+                type="password"
+                value={fPat}
+                onChange={(e) => setFPat(e.target.value)}
+                placeholder="sbp_xxxxxxxxxxxx (setup se auto-fill hota hai)"
+                className="w-full bg-[#0a0e1a] border border-slate-700/80 rounded-xl px-4 py-2.5 text-sm font-mono placeholder-slate-700 focus:outline-none focus:border-blue-500/60 transition-colors text-white"
+              />
             </div>
 
             {createMsg && (
@@ -176,7 +195,6 @@ export default function Apps({ onOpenApp }: AppsProps) {
               const showKt = ktId === app.id;
               return (
                 <div key={app.id} className="bg-[#0d1220] border border-slate-800/80 rounded-2xl overflow-hidden">
-                  {/* Main row */}
                   <div className="flex items-center gap-3 px-4 py-3.5">
                     <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${app.is_active ? "bg-emerald-400 shadow-[0_0_8px_#34d399]" : "bg-slate-600"}`} />
                     <div className="flex-1 min-w-0">
@@ -194,9 +212,7 @@ export default function Apps({ onOpenApp }: AppsProps) {
                       </div>
                     </div>
 
-                    {/* Actions */}
                     <div className="flex items-center gap-1">
-                      {/* Toggle */}
                       <button onClick={() => handleToggle(app)} title={app.is_active ? "Disable" : "Enable"}
                               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                 app.is_active
@@ -207,19 +223,16 @@ export default function Apps({ onOpenApp }: AppsProps) {
                                        : <><PowerOff className="w-3 h-3" /><span className="hidden sm:inline">Inactive</span></>}
                       </button>
 
-                      {/* Constants.kt */}
                       <button onClick={() => setKtId(showKt ? null : app.id)} title="Constants.kt"
                               className={`p-1.5 rounded-lg transition-colors ${showKt ? "bg-blue-900/30 text-blue-400" : "hover:bg-slate-800 text-slate-500 hover:text-white"}`}>
                         <Smartphone className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* Delete */}
                       <button onClick={() => handleDelete(app.id)} title="Delete"
                               className="p-1.5 rounded-lg hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* Open */}
                       <button onClick={() => onOpenApp(app)}
                               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-400 hover:text-white transition-colors">
                         Devices <ChevronRight className="w-3 h-3" />
@@ -227,7 +240,6 @@ export default function Apps({ onOpenApp }: AppsProps) {
                     </div>
                   </div>
 
-                  {/* Constants.kt panel */}
                   {showKt && (
                     <div className="border-t border-slate-800/60 bg-[#080c16] px-4 py-4">
                       <div className="flex items-center justify-between mb-2">

@@ -25,8 +25,13 @@ router.get("/setup/status", async (_req: Request, res: Response) => {
 });
 
 router.post("/setup/init", async (req: Request, res: Response) => {
+  const { pat } = req.body as { pat?: string };
+  if (!pat?.trim()) {
+    res.status(400).json({ error: "Supabase Personal Access Token (PAT) required" });
+    return;
+  }
   try {
-    await runSetup();
+    await runSetup(pat.trim());
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });
@@ -44,9 +49,17 @@ router.get("/apps", async (_req: Request, res: Response) => {
 });
 
 router.post("/apps", async (req: Request, res: Response) => {
-  const { token, label } = req.body as { token?: string; label?: string };
+  const { token, label, pat } = req.body as {
+    token?: string;
+    label?: string;
+    pat?: string;
+  };
   if (!token?.trim()) {
     res.status(400).json({ error: "token is required" });
+    return;
+  }
+  if (!pat?.trim()) {
+    res.status(400).json({ error: "Supabase PAT required to create device table" });
     return;
   }
   const clean = token.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -55,14 +68,14 @@ router.post("/apps", async (req: Request, res: Response) => {
     return;
   }
   try {
-    res.status(201).json(await createApp(clean, (label ?? "").trim()));
+    res.status(201).json(await createApp(clean, (label ?? "").trim(), pat.trim()));
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });
   }
 });
 
 router.patch("/apps/:id", async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const id = req.params["id"] as string;
   const patch = req.body as Record<string, unknown>;
   try {
     await updateApp(id, patch);
@@ -73,8 +86,9 @@ router.patch("/apps/:id", async (req: Request, res: Response) => {
 });
 
 router.delete("/apps/:id", async (req: Request, res: Response) => {
+  const id = req.params["id"] as string;
   try {
-    await deleteApp(req.params.id);
+    await deleteApp(id);
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });
@@ -84,8 +98,9 @@ router.delete("/apps/:id", async (req: Request, res: Response) => {
 // ─── Devices ──────────────────────────────────────────────
 
 router.get("/apps/:token/devices", async (req: Request, res: Response) => {
+  const token = req.params["token"] as string;
   try {
-    res.json(await getDevices(req.params.token));
+    res.json(await getDevices(token));
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });
   }
@@ -94,9 +109,11 @@ router.get("/apps/:token/devices", async (req: Request, res: Response) => {
 router.patch(
   "/apps/:token/devices/:uid",
   async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const uid = req.params["uid"] as string;
     const patch = req.body as Record<string, unknown>;
     try {
-      await patchDevice(req.params.token, req.params.uid, patch);
+      await patchDevice(token, uid, patch);
       res.json({ ok: true });
     } catch (e: unknown) {
       res.status(500).json({ error: String(e) });
@@ -107,8 +124,10 @@ router.patch(
 router.delete(
   "/apps/:token/devices/:uid",
   async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const uid = req.params["uid"] as string;
     try {
-      await deleteDevice(req.params.token, req.params.uid);
+      await deleteDevice(token, uid);
       res.json({ ok: true });
     } catch (e: unknown) {
       res.status(500).json({ error: String(e) });
