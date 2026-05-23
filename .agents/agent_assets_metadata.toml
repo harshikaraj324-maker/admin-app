@@ -77,7 +77,7 @@ title = "Android Files — SupabaseApi + AndroidBridge + Constants + MainActivit
 id = "QN9V7quU5BkJDsjDzILW9"
 uri = "file://android/android-kotlin-files.zip"
 type = "unspecified"
-title = "Android Kotlin Files (11 files)"
+title = "Android Kotlin Files — 12 files (FCMHelper included)"
 
 [[outputs]]
 id = "K_vr_NJdjImHFlEuLXQlR"

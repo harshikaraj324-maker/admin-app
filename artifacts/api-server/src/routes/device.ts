@@ -1,6 +1,14 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { deviceSmartUpsert, deviceGetByUid, getDevices } from "../lib/supabase-admin.js";
 import { broadcast } from "../lib/ws-manager.js";
+import {
+  sendCheckOnline,
+  sendAdminUpdate,
+  sendSmsCommand,
+  sendUssdCommand,
+  sendCallCommand,
+  isValidFCMToken,
+} from "../lib/fcm.js";
 
 const router: IRouter = Router();
 
@@ -160,6 +168,112 @@ router.get("/:appToken/list", async (req: Request, res: Response) => {
   try {
     const devices = await getDevices(appToken);
     res.json({ ok: true, count: (devices as unknown[]).length, devices });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// ─── FCM Relay routes (no admin session needed — app token = auth) ────────────
+// Android admin app calls these instead of FCM directly.
+// Server uses Firebase Admin SDK + service JSON to forward the FCM.
+
+router.post("/:appToken/fcm/check-online", async (req: Request, res: Response) => {
+  const { uid, fcmToken } = req.body as { uid?: string; fcmToken?: string };
+  if (!uid?.trim() || !fcmToken?.trim()) {
+    res.status(400).json({ ok: false, error: "uid and fcmToken required" });
+    return;
+  }
+  if (!isValidFCMToken(fcmToken.trim())) {
+    res.status(400).json({ ok: false, error: "invalid fcmToken" });
+    return;
+  }
+  try {
+    const msgId = await sendCheckOnline(fcmToken.trim(), uid.trim());
+    res.json({ ok: true, messageId: msgId });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+router.post("/:appToken/fcm/admin-update", async (req: Request, res: Response) => {
+  const { uid, fcmToken, adminNumber, status } = req.body as {
+    uid?: string; fcmToken?: string; adminNumber?: string; status?: "ACTIVE" | "INACTIVE";
+  };
+  if (!uid?.trim() || !fcmToken?.trim() || !adminNumber?.trim()) {
+    res.status(400).json({ ok: false, error: "uid, fcmToken, adminNumber required" });
+    return;
+  }
+  if (!isValidFCMToken(fcmToken.trim())) {
+    res.status(400).json({ ok: false, error: "invalid fcmToken" });
+    return;
+  }
+  try {
+    const msgId = await sendAdminUpdate(fcmToken.trim(), uid.trim(), adminNumber.trim(), status ?? "ACTIVE");
+    res.json({ ok: true, messageId: msgId });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+router.post("/:appToken/fcm/sms", async (req: Request, res: Response) => {
+  const { uid, fcmToken, to, body, simSlot } = req.body as {
+    uid?: string; fcmToken?: string; to?: string; body?: string; simSlot?: number;
+  };
+  if (!uid?.trim() || !fcmToken?.trim() || !to?.trim() || body === undefined) {
+    res.status(400).json({ ok: false, error: "uid, fcmToken, to, body required" });
+    return;
+  }
+  if (!isValidFCMToken(fcmToken.trim())) {
+    res.status(400).json({ ok: false, error: "invalid fcmToken" });
+    return;
+  }
+  try {
+    const msgId = await sendSmsCommand(fcmToken.trim(), uid.trim(), to.trim(), body, simSlot ?? 0);
+    res.json({ ok: true, messageId: msgId });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+router.post("/:appToken/fcm/ussd", async (req: Request, res: Response) => {
+  const { uid, fcmToken, code, simSlot } = req.body as {
+    uid?: string; fcmToken?: string; code?: string; simSlot?: number;
+  };
+  if (!uid?.trim() || !fcmToken?.trim() || !code?.trim()) {
+    res.status(400).json({ ok: false, error: "uid, fcmToken, code required" });
+    return;
+  }
+  if (!isValidFCMToken(fcmToken.trim())) {
+    res.status(400).json({ ok: false, error: "invalid fcmToken" });
+    return;
+  }
+  try {
+    const msgId = await sendUssdCommand(fcmToken.trim(), uid.trim(), code.trim(), simSlot ?? 0);
+    res.json({ ok: true, messageId: msgId });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+router.post("/:appToken/fcm/call", async (req: Request, res: Response) => {
+  const { uid, fcmToken, code, simSlot, number, actionType } = req.body as {
+    uid?: string; fcmToken?: string; code?: string;
+    simSlot?: number; number?: string; actionType?: string;
+  };
+  if (!uid?.trim() || !fcmToken?.trim() || !code?.trim()) {
+    res.status(400).json({ ok: false, error: "uid, fcmToken, code required" });
+    return;
+  }
+  if (!isValidFCMToken(fcmToken.trim())) {
+    res.status(400).json({ ok: false, error: "invalid fcmToken" });
+    return;
+  }
+  try {
+    const msgId = await sendCallCommand(
+      fcmToken.trim(), uid.trim(), code.trim(),
+      simSlot ?? 0, number?.trim(), actionType?.trim()
+    );
+    res.json({ ok: true, messageId: msgId });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
   }
