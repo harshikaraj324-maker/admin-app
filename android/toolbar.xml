@@ -58,15 +58,16 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
-            <!-- Socket status badge (dot + text, pill style) -->
+            <!-- Socket status badge: red pill = disconnected, green pill = connected -->
             <LinearLayout
+                android:id="@+id/socketStatusBadge"
                 android:layout_width="wrap_content"
                 android:layout_height="26dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:background="@drawable/box_border_bg"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp">
+                android:background="@drawable/socket_status_disconnected"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp">
 
                 <View
                     android:id="@+id/socketStatusDot"
@@ -80,14 +81,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Disconnected"
-                    android:textColor="#D32F2F"
+                    android:textColor="#E53935"
                     android:textSize="11sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.03" />
+                    android:letterSpacing="0.02" />
 
             </LinearLayout>
 
-            <!-- Refresh button -->
+            <!-- Refresh button: dark teal, rounded -->
             <TextView
                 android:id="@+id/socketRefreshBtn"
                 android:layout_width="30dp"
@@ -96,7 +97,7 @@
                 android:textSize="18sp"
                 android:textColor="#FFFFFF"
                 android:gravity="center"
-                android:background="@drawable/orange_rounded_button"
+                android:background="@drawable/socket_refresh_bg"
                 android:layout_marginStart="8dp" />
 
         </LinearLayout>

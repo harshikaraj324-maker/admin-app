@@ -63,9 +63,10 @@ class DeviceActivity : AppCompatActivity() {
     private lateinit var receivedText: TextView
 
     // ── Socket status UI
-    private lateinit var socketStatusDot:  View
-    private lateinit var socketStatusText: TextView
-    private lateinit var socketRefreshBtn: TextView
+    private lateinit var socketStatusBadge: android.widget.LinearLayout
+    private lateinit var socketStatusDot:   View
+    private lateinit var socketStatusText:  TextView
+    private lateinit var socketRefreshBtn:  TextView
 
     private lateinit var totalCount: TextView
     private lateinit var last15MinSeen: TextView
@@ -250,16 +251,18 @@ class DeviceActivity : AppCompatActivity() {
     // ── Socket status UI ─────────────────────────────────────────
 
     private fun updateSocketStatusUi(connected: Boolean) {
-        if (!::socketStatusDot.isInitialized) return
+        if (!::socketStatusBadge.isInitialized) return
 
         if (connected) {
+            socketStatusBadge.setBackgroundResource(R.drawable.socket_status_connected)
             socketStatusDot.setBackgroundResource(R.drawable.green_circle)
             socketStatusText.text = "Connected"
-            socketStatusText.setTextColor(Color.parseColor("#388E3C"))
+            socketStatusText.setTextColor(Color.parseColor("#2E7D32"))
         } else {
+            socketStatusBadge.setBackgroundResource(R.drawable.socket_status_disconnected)
             socketStatusDot.setBackgroundResource(R.drawable.red_circle)
             socketStatusText.text = "Disconnected"
-            socketStatusText.setTextColor(Color.parseColor("#D32F2F"))
+            socketStatusText.setTextColor(Color.parseColor("#C62828"))
         }
     }
 
@@ -357,9 +360,10 @@ class DeviceActivity : AppCompatActivity() {
         sentText    = findViewById(R.id.sentText)
         receivedText = findViewById(R.id.receivedText)
 
-        socketStatusDot  = findViewById(R.id.socketStatusDot)
-        socketStatusText = findViewById(R.id.socketStatusText)
-        socketRefreshBtn = findViewById(R.id.socketRefreshBtn)
+        socketStatusBadge = findViewById(R.id.socketStatusBadge)
+        socketStatusDot   = findViewById(R.id.socketStatusDot)
+        socketStatusText  = findViewById(R.id.socketStatusText)
+        socketRefreshBtn  = findViewById(R.id.socketRefreshBtn)
 
         totalCount          = findViewById(R.id.totalCount)
         last15MinSeen       = findViewById(R.id.last15MinSeen)
