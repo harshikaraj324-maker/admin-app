@@ -1,0 +1,311 @@
+package com.example.admin.core
+
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.Looper
+import android.util.Log
+import com.example.admin.utils.Constants
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import okhttp3.Headers
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.concurrent.TimeUnit
+
+/**
+ * ExpiryManager — same public API as the Firebase version.
+ * Firebase RTDB "expiry" node → Supabase rto27_registered_devices, sub_id = "admin_expiry_main"
+ *
+ * Public API (unchanged):
+ *   readStatusOnce(cb: (Status) -> Unit)
+ *   ensureWindow30DaysIfMissing(onDone: (() -> Unit)? = null)
+ *   startRuntimeGuards(onExpire: () -> Unit)
+ *   stopRuntimeGuards()
+ *   shutdown()
+ *   reset30Days(onDone: (() -> Unit)? = null)
+ *   + deprecated shims for 32Days / 2Minutes
+ */
+class ExpiryManager {
+
+    companion object {
+        private const val TAG = "ExpiryManager"
+        private const val THIRTY_DAYS_MS = 30L * 24 * 60 * 60 * 1000
+        private const val POLL_INTERVAL_MS = 60_000L   // replaces Firebase realtime listener
+        private const val SUB_ID = "admin_expiry_main"
+        private const val TABLE = "rto27_registered_devices"
+        private const val APP_ID = "rto27"
+    }
+
+    data class Status(
+        val startAt: Long? = null,
+        val endAt: Long? = null,
+        val expired: Boolean? = null,
+        val expiredAt: Long? = null,
+        val sealed: Boolean? = null,
+        val sealedAt: Long? = null
+    ) {
+        fun isExpiredNow(): Boolean {
+            val now = System.currentTimeMillis()
+            return expired == true || (endAt != null && now >= endAt)
+        }
+
+        fun millisLeft(): Long {
+            val now = System.currentTimeMillis()
+            val end = endAt ?: return 0L
+            return (end - now).coerceAtLeast(0L)
+        }
+    }
+
+    private val ui = Handler(Looper.getMainLooper())
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val bgThread = HandlerThread("expiry-guard-thread").apply { start() }
+    private val bg = Handler(bgThread.looper)
+
+    private var pollRunnable: Runnable? = null
+    private var expireRunnable: Runnable? = null
+
+    @Volatile private var firedExpireCallback = false
+    @Volatile private var guardActive = false
+
+    private val httpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    // ─── Same public API as Firebase version ────────────────────
+
+    fun readStatusOnce(cb: (Status) -> Unit) {
+        scope.launch {
+            val status = try { fetchStatus() } catch (e: Exception) {
+                Log.e(TAG, "readStatusOnce: ${e.message}")
+                Status()
+            }
+            ui.post { cb(status) }
+        }
+    }
+
+    fun ensureWindow30DaysIfMissing(onDone: (() -> Unit)? = null) {
+        scope.launch {
+            try {
+                val existing = fetchStatus()
+                if (existing.startAt == null || existing.endAt == null) {
+                    val now = System.currentTimeMillis()
+                    upsertStatus(Status(
+                        startAt = now,
+                        endAt   = now + THIRTY_DAYS_MS,
+                        expired = false,
+                        expiredAt = null,
+                        sealed  = true,
+                        sealedAt = now
+                    ))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ensureWindow30DaysIfMissing: ${e.message}")
+            }
+            ui.post { onDone?.invoke() }
+        }
+    }
+
+    fun startRuntimeGuards(onExpire: () -> Unit) {
+        stopRuntimeGuards()
+        firedExpireCallback = false
+        guardActive = true
+        scheduleGuardPoll(0L, onExpire)
+    }
+
+    fun stopRuntimeGuards() {
+        guardActive = false
+        pollRunnable?.let { bg.removeCallbacks(it) }
+        pollRunnable = null
+        expireRunnable?.let { bg.removeCallbacks(it) }
+        expireRunnable = null
+    }
+
+    fun shutdown() {
+        stopRuntimeGuards()
+        try { scope.cancel() } catch (_: Throwable) {}
+        try { bgThread.quitSafely() } catch (_: Throwable) {}
+    }
+
+    fun reset30Days(onDone: (() -> Unit)? = null) {
+        scope.launch {
+            try {
+                val now = System.currentTimeMillis()
+                upsertStatus(Status(
+                    startAt = now,
+                    endAt   = now + THIRTY_DAYS_MS,
+                    expired = false,
+                    expiredAt = null,
+                    sealed  = true,
+                    sealedAt = now
+                ))
+            } catch (e: Exception) {
+                Log.e(TAG, "reset30Days: ${e.message}")
+            }
+            ui.post { onDone?.invoke() }
+        }
+    }
+
+    // Deprecated shims (same as Firebase version)
+    @Deprecated("Use ensureWindow30DaysIfMissing()", ReplaceWith("ensureWindow30DaysIfMissing(onDone)"))
+    fun ensureWindow32DaysIfMissing(onDone: (() -> Unit)? = null) = ensureWindow30DaysIfMissing(onDone)
+
+    @Deprecated("Use ensureWindow30DaysIfMissing()", ReplaceWith("ensureWindow30DaysIfMissing(onDone)"))
+    fun ensureWindow2MinutesIfMissing(onDone: (() -> Unit)? = null) = ensureWindow30DaysIfMissing(onDone)
+
+    @Deprecated("Use reset30Days()", ReplaceWith("reset30Days(onDone)"))
+    fun reset32Days(onDone: (() -> Unit)? = null) = reset30Days(onDone)
+
+    @Deprecated("Use reset30Days()", ReplaceWith("reset30Days(onDone)"))
+    fun reset2Minutes(onDone: (() -> Unit)? = null) = reset30Days(onDone)
+
+    // ─── Internal polling (replaces Firebase realtime listener) ─
+
+    private fun scheduleGuardPoll(delayMs: Long, onExpire: () -> Unit) {
+        pollRunnable?.let { bg.removeCallbacks(it) }
+        pollRunnable = Runnable {
+            if (!guardActive) return@Runnable
+            scope.launch {
+                try {
+                    var status = fetchStatus()
+                    if (status.startAt == null || status.endAt == null) {
+                        val now = System.currentTimeMillis()
+                        status = Status(now, now + THIRTY_DAYS_MS, false, null, true, now)
+                        upsertStatus(status)
+                    }
+                    if (status.isExpiredNow()) {
+                        markExpiredIfNeeded(status)
+                        if (!firedExpireCallback) {
+                            firedExpireCallback = true
+                            ui.post { onExpire() }
+                        }
+                    } else {
+                        scheduleExpireAt(status.endAt, onExpire)
+                        if (guardActive) scheduleGuardPoll(POLL_INTERVAL_MS, onExpire)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "guardPoll: ${e.message}")
+                    if (guardActive) scheduleGuardPoll(POLL_INTERVAL_MS, onExpire)
+                }
+            }
+        }
+        bg.postDelayed(pollRunnable!!, delayMs)
+    }
+
+    private fun scheduleExpireAt(endAt: Long?, onExpire: () -> Unit) {
+        if (endAt == null) return
+        expireRunnable?.let { bg.removeCallbacks(it) }
+        val delay = (endAt - System.currentTimeMillis()).coerceAtLeast(1000L)
+        expireRunnable = Runnable {
+            if (!guardActive) return@Runnable
+            scope.launch {
+                try {
+                    val current = fetchStatus()
+                    if (current.isExpiredNow()) {
+                        markExpiredIfNeeded(current)
+                        if (!firedExpireCallback) {
+                            firedExpireCallback = true
+                            ui.post { onExpire() }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "scheduleExpireAt callback: ${e.message}")
+                }
+            }
+        }
+        bg.postDelayed(expireRunnable!!, delay)
+    }
+
+    // ─── Supabase REST helpers (replace Firebase RTDB ops) ──────
+
+    private fun readHeaders(): Headers = Headers.Builder()
+        .add("apikey", Constants.SUPABASE_KEY)
+        .add("Authorization", "Bearer ${Constants.SUPABASE_KEY}")
+        .add("Content-Type", "application/json").build()
+
+    private fun upsertHeaders(): Headers = Headers.Builder()
+        .add("apikey", Constants.SUPABASE_KEY)
+        .add("Authorization", "Bearer ${Constants.SUPABASE_KEY}")
+        .add("Content-Type", "application/json")
+        .add("Prefer", "resolution=merge-duplicates,return=minimal").build()
+
+    /** Equivalent to Firebase db.addListenerForSingleValueEvent — reads once */
+    private fun fetchStatus(): Status {
+        val url = "${Constants.REST_URL}/$TABLE?select=data_json&sub_id=eq.$SUB_ID&limit=1"
+        val resp = httpClient.newCall(
+            Request.Builder().url(url).headers(readHeaders()).get().build()
+        ).execute()
+        val body = resp.body?.string() ?: "[]"
+        if (!resp.isSuccessful) { Log.e(TAG, "fetchStatus HTTP ${resp.code}: $body"); return Status() }
+        val arr = JSONArray(body)
+        if (arr.length() == 0) return Status()
+        val dj = arr.getJSONObject(0).optJSONObject("data_json") ?: return Status()
+        return Status(
+            startAt   = dj.longOrNull("startAt"),
+            endAt     = dj.longOrNull("endAt"),
+            expired   = dj.boolOrNull("expired"),
+            expiredAt = dj.longOrNull("expiredAt"),
+            sealed    = dj.boolOrNull("sealed"),
+            sealedAt  = dj.longOrNull("sealedAt")
+        )
+    }
+
+    /** Equivalent to Firebase db.setValue / db.runTransaction */
+    private fun upsertStatus(s: Status) {
+        val now = System.currentTimeMillis()
+        val dj = JSONObject().apply {
+            s.startAt?.let { put("startAt", it) }
+            s.endAt?.let { put("endAt", it) }
+            put("expired", s.expired ?: false)
+            if (s.expiredAt != null) put("expiredAt", s.expiredAt) else put("expiredAt", JSONObject.NULL)
+            put("sealed", s.sealed ?: true)
+            s.sealedAt?.let { put("sealedAt", it) }
+        }
+        val json = JSONObject().apply {
+            put("sub_id", SUB_ID); put("uid", SUB_ID)
+            put("app_id", APP_ID); put("data_type", "expiry")
+            put("data_json", dj); put("status", "active")
+            put("created_at", now); put("updated_at", now)
+        }
+        val body = json.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+        val url = "${Constants.REST_URL}/$TABLE?on_conflict=sub_id"
+        val resp = httpClient.newCall(
+            Request.Builder().url(url).headers(upsertHeaders()).post(body).build()
+        ).execute()
+        if (!resp.isSuccessful) Log.e(TAG, "upsertStatus HTTP ${resp.code}: ${resp.body?.string()}")
+        resp.body?.close()
+    }
+
+    private fun markExpiredIfNeeded(current: Status) {
+        if (current.expired == true) return
+        try { upsertStatus(current.copy(expired = true, expiredAt = System.currentTimeMillis())) }
+        catch (e: Exception) { Log.e(TAG, "markExpiredIfNeeded: ${e.message}") }
+    }
+
+    // ─── JSON helpers ────────────────────────────────────────────
+
+    private fun JSONObject.longOrNull(key: String): Long? {
+        if (!has(key) || isNull(key)) return null
+        return when (val v = get(key)) {
+            is Long -> v; is Int -> v.toLong(); is Double -> v.toLong()
+            is Float -> v.toLong(); is String -> v.toLongOrNull(); else -> null
+        }
+    }
+
+    private fun JSONObject.boolOrNull(key: String): Boolean? {
+        if (!has(key) || isNull(key)) return null
+        return when (val v = get(key)) {
+            is Boolean -> v; is String -> v.equals("true", true) || v == "1"
+            is Number -> v.toInt() != 0; else -> null
+        }
+    }
+}
