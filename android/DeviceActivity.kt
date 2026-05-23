@@ -263,6 +263,20 @@ class DeviceActivity : AppCompatActivity() {
 
         supabaseApi.parseDeviceStatusRow(row)?.let { status ->
             heartbeatMap[status.uid] = status
+
+            // ── FIX Bug 1 & 2: Realtime event aate hi IMMEDIATELY online detect karo
+            // Watcher ke next tick (1 sec) ka wait mat karo — agar device
+            // processingDevices mein hai aur heartbeat fresh hai, turant resolve karo.
+            if (processingDevices.contains(uid)) {
+                val newCheckedAt  = status.checkedAt
+                val oldCheckedAt  = oldOnlineCheckedAtMap[uid] ?: 0L
+                val now           = System.currentTimeMillis()
+                val isNowFresh    = newCheckedAt > 0L && (now - newCheckedAt) in 0..FIFTEEN_MINUTES_MS
+                if (isNowFresh && newCheckedAt != oldCheckedAt) {
+                    Log.d(TAG, "Realtime: $uid ONLINE (${now - (checkStartedAtMap[uid] ?: now)}ms)")
+                    markDeviceOnline(uid)
+                }
+            }
         }
 
         supabaseApi.parseBatteryRow(row)?.let { battery ->
@@ -1089,10 +1103,12 @@ class DeviceActivity : AppCompatActivity() {
             }
 
             val latestCheckedAt = getOnlineCheckedAt(latestStatus ?: heartbeatMap[uid])
+            // ── FIX: same isFreshOnline logic — clock-skew-safe
+            val now2 = System.currentTimeMillis()
             val updatedAfterCheck =
                 latestCheckedAt > 0L &&
                         latestCheckedAt != oldCheckedAt &&
-                        latestCheckedAt >= (startedAt - 2_000L)
+                        (now2 - latestCheckedAt) in 0..FIFTEEN_MINUTES_MS
 
             if (updatedAfterCheck) {
                 markDeviceOnline(uid)
@@ -1178,10 +1194,14 @@ class DeviceActivity : AppCompatActivity() {
                 val oldCheckedAt: Long = oldOnlineCheckedAtMap[uid] ?: 0L
                 val newCheckedAt: Long = getOnlineCheckedAt(heartbeatMap[uid])
 
+                // ── FIX Bug 1 & 2: purana condition `newCheckedAt >= (startedAt - 2_000L)`
+                // clock-skew pe fail kar deta tha. Ab `isFreshOnline`-style check use
+                // karo — heartbeat 15 min ke andar ka ho aur actually change hua ho.
+                val now2 = System.currentTimeMillis()
                 val heartbeatUpdatedAfterCheck =
                     newCheckedAt > 0L &&
                             newCheckedAt != oldCheckedAt &&
-                            newCheckedAt >= (startedAt - 2_000L)
+                            (now2 - newCheckedAt) in 0..FIFTEEN_MINUTES_MS
 
                 if (heartbeatUpdatedAfterCheck) {
                     markDeviceOnline(uid)
