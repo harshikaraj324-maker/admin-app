@@ -30,10 +30,10 @@ export default function App() {
   if (ready === "setup") return <Setup onDone={() => setReady("done")} />;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#080c16]">
+    <div className="flex h-[100dvh] overflow-hidden bg-[#080c16]">
       <Sidebar page={page} onNav={setPage} />
-      {/* pb-14 on mobile = space for bottom nav bar */}
-      <div className="flex-1 overflow-hidden pb-14 sm:pb-0">
+      {/* pb-16 on mobile = room for bottom nav; removed on md+ */}
+      <div className="flex-1 overflow-hidden pb-16 md:pb-0">
         {page === "dashboard" ? (
           <Dashboard />
         ) : page === "apps" ? (

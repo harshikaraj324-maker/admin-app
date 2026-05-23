@@ -16,8 +16,8 @@ const NAV = [
 export default function Sidebar({ page, onNav }: SidebarProps) {
   return (
     <>
-      {/* ── Desktop sidebar ── */}
-      <aside className="hidden sm:flex w-52 flex-shrink-0 bg-[#0d1220] border-r border-slate-800/70 flex-col">
+      {/* ── Desktop sidebar (768px+) ── */}
+      <aside className="hidden md:flex w-52 flex-shrink-0 bg-[#0d1220] border-r border-slate-800/70 flex-col">
         <div className="h-14 flex items-center px-4 border-b border-slate-800/70">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
@@ -56,16 +56,16 @@ export default function Sidebar({ page, onNav }: SidebarProps) {
         </div>
       </aside>
 
-      {/* ── Mobile bottom nav ── */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1220] border-t border-slate-800/70 flex">
+      {/* ── Mobile bottom nav (below 768px) ── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1220] border-t border-slate-800/70 flex safe-area-bottom">
         {NAV.map(({ id, label, icon: Icon }) => {
           const active = page === id;
           return (
             <button
               key={id}
               onClick={() => onNav(id)}
-              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 transition-colors ${
-                active ? "text-blue-400" : "text-slate-600"
+              className={`flex-1 flex flex-col items-center justify-center gap-0.5 py-3 transition-colors ${
+                active ? "text-blue-400" : "text-slate-600 active:text-slate-300"
               }`}
             >
               <Icon className="w-5 h-5" />
