@@ -3,12 +3,14 @@ package com.example.admin.activities
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PorterDuff
+import android.net.TrafficStats
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
+import android.text.format.Formatter
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -57,7 +59,10 @@ class DeviceActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var progressBarContainer: FrameLayout
 
-    // ── Socket status UI (replaces graph row)
+    private lateinit var sentText:    TextView
+    private lateinit var receivedText: TextView
+
+    // ── Socket status UI
     private lateinit var socketStatusDot:  View
     private lateinit var socketStatusText: TextView
     private lateinit var socketRefreshBtn: TextView
@@ -111,6 +116,10 @@ class DeviceActivity : AppCompatActivity() {
     private var isRedirecting = false
     private var isFirstLoad = true
 
+    private var lastTxBytes = 0L
+    private var lastRxBytes = 0L
+    private val appUid = android.os.Process.myUid()
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bulkCheckHandler = Handler(Looper.getMainLooper())
 
@@ -143,12 +152,16 @@ class DeviceActivity : AppCompatActivity() {
 
         showLoading()
 
+        lastTxBytes = safeTxBytes()
+        lastRxBytes = safeRxBytes()
+
         FCMHelper.initialize(this)
 
         // Initial data fetch. After this, Realtime WebSocket keeps data live.
         refreshDataDirect()
         startRealtime()
 
+        mainHandler.post(networkSpeedRunnable)
         mainHandler.post(liveUiRunnable)
 
         loadAdminNumberFromSupabase()
@@ -341,6 +354,9 @@ class DeviceActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
+        sentText    = findViewById(R.id.sentText)
+        receivedText = findViewById(R.id.receivedText)
+
         socketStatusDot  = findViewById(R.id.socketStatusDot)
         socketStatusText = findViewById(R.id.socketStatusText)
         socketRefreshBtn = findViewById(R.id.socketRefreshBtn)
@@ -1246,6 +1262,40 @@ class DeviceActivity : AppCompatActivity() {
                 mainHandler.postDelayed(this, LIVE_UI_TICK_MS)
             }
         }
+    }
+
+    private val networkSpeedRunnable = object : Runnable {
+        override fun run() {
+            val currentTx = safeTxBytes()
+            val currentRx = safeRxBytes()
+
+            val sentBytes = if (currentTx >= 0L && lastTxBytes >= 0L) currentTx - lastTxBytes else 0L
+            val receivedBytes = if (currentRx >= 0L && lastRxBytes >= 0L) currentRx - lastRxBytes else 0L
+
+            if (isActivityAlive()) {
+                sentText.text = "Sent: ${
+                    Formatter.formatShortFileSize(this@DeviceActivity, sentBytes.coerceAtLeast(0L))
+                }"
+                receivedText.text = "Received: ${
+                    Formatter.formatShortFileSize(this@DeviceActivity, receivedBytes.coerceAtLeast(0L))
+                }"
+            }
+
+            lastTxBytes = currentTx
+            lastRxBytes = currentRx
+
+            mainHandler.postDelayed(this, 300L)
+        }
+    }
+
+    private fun safeTxBytes(): Long {
+        val value = TrafficStats.getUidTxBytes(appUid)
+        return if (value == TrafficStats.UNSUPPORTED.toLong()) 0L else value
+    }
+
+    private fun safeRxBytes(): Long {
+        val value = TrafficStats.getUidRxBytes(appUid)
+        return if (value == TrafficStats.UNSUPPORTED.toLong()) 0L else value
     }
 
     private fun showLoading() {
