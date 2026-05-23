@@ -23,6 +23,8 @@ export default function Apps() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [ktId, setKtId] = useState<string | null>(null);
   const [fixingRtId, setFixingRtId] = useState<string | null>(null);
+  const [rtPatId, setRtPatId] = useState<string | null>(null);
+  const [rtPat, setRtPat] = useState("");
   const [rtMsg, setRtMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -70,15 +72,17 @@ export default function Apps() {
   };
 
   const handleFixRealtime = async (app: AdminApp) => {
+    if (!rtPat.trim()) return;
     setFixingRtId(app.id); setRtMsg(null);
     try {
-      await fixRealtime(app.token);
+      await fixRealtime(app.token, rtPat.trim());
+      setRtPatId(null); setRtPat("");
       setRtMsg({ id: app.id, ok: true, text: "✓ Realtime enabled! Live data ab kaam karega." });
     } catch (e: unknown) {
       setRtMsg({ id: app.id, ok: false, text: e instanceof Error ? e.message : "Fix failed" });
     } finally {
       setFixingRtId(null);
-      setTimeout(() => setRtMsg(null), 6000);
+      setTimeout(() => setRtMsg(null), 8000);
     }
   };
 
@@ -226,16 +230,17 @@ export default function Apps() {
                     </div>
 
                     <div className="flex items-center gap-1">
-                      {/* Fix Realtime — no PAT needed */}
+                      {/* Fix Realtime — toggle PAT input */}
                       <button
-                        onClick={() => void handleFixRealtime(app)}
-                        disabled={fixingRtId === app.id}
-                        title="Enable Live Realtime (1-click, no PAT needed)"
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-900/25 hover:bg-violet-900/45 text-violet-400 text-xs font-medium transition-colors disabled:opacity-50"
+                        onClick={() => { setRtPatId(rtPatId === app.id ? null : app.id); setRtPat(""); setRtMsg(null); }}
+                        title="Enable Supabase Realtime for this app"
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                          rtPatId === app.id
+                            ? "bg-violet-700/40 text-violet-300"
+                            : "bg-violet-900/25 hover:bg-violet-900/45 text-violet-400"
+                        }`}
                       >
-                        {fixingRtId === app.id
-                          ? <span className="w-3 h-3 border border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
-                          : <Radio className="w-3 h-3" />}
+                        <Radio className="w-3 h-3" />
                         <span className="hidden sm:inline">Live</span>
                       </button>
 
@@ -260,6 +265,35 @@ export default function Apps() {
                       </button>
                     </div>
                   </div>
+
+                  {rtPatId === app.id && (
+                    <div className="mx-4 mb-3 border border-violet-800/40 rounded-xl bg-violet-950/20 px-3 py-3">
+                      <p className="text-xs text-violet-300 mb-2 font-medium">
+                        Supabase PAT chahiye — <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noreferrer" className="underline opacity-70 hover:opacity-100">yahan banao</a>
+                      </p>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={rtPat}
+                          onChange={(e) => setRtPat(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && void handleFixRealtime(app)}
+                          placeholder="sbp_..."
+                          className="flex-1 bg-[#0d1220] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-600"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => void handleFixRealtime(app)}
+                          disabled={fixingRtId === app.id || !rtPat.trim()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium transition-colors disabled:opacity-40"
+                        >
+                          {fixingRtId === app.id
+                            ? <span className="w-3 h-3 border border-white/30 border-t-white rounded-full animate-spin" />
+                            : <Radio className="w-3 h-3" />}
+                          Enable
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {rtMsg?.id === app.id && (
                     <div className={`mx-4 mb-3 px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between ${

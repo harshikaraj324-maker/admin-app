@@ -1,5 +1,4 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import pg from "pg";
 import {
   checkSetup,
   runSetup,
@@ -11,33 +10,8 @@ import {
   patchDevice,
   deleteDevice,
   fixDeviceTable,
+  runSqlViaMgmt,
 } from "../lib/supabase-admin.js";
-
-// ── PAT-free realtime fix — uses SUPABASE_DB_URL direct connection ──────────
-async function fixRealtimeDirect(appToken: string): Promise<void> {
-  const dbUrl = process.env["SUPABASE_DB_URL"];
-  if (!dbUrl) throw new Error("SUPABASE_DB_URL env var not set");
-  const tableName = `${appToken}_registered_devices`;
-  const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
-  await client.connect();
-  try {
-    await client.query(`ALTER TABLE ${tableName} REPLICA IDENTITY FULL`);
-    await client.query(`
-      DO $rt$ BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_publication_tables
-          WHERE pubname = 'supabase_realtime'
-            AND schemaname = 'public'
-            AND tablename = '${tableName}'
-        ) THEN
-          ALTER PUBLICATION supabase_realtime ADD TABLE ${tableName};
-        END IF;
-      END $rt$
-    `);
-  } finally {
-    await client.end();
-  }
-}
 
 const router: IRouter = Router();
 
@@ -123,12 +97,31 @@ router.delete("/apps/:id", async (req: Request, res: Response) => {
   }
 });
 
-// ─── Fix Realtime — no PAT needed, uses SUPABASE_DB_URL ──────
+// ─── Fix Realtime (realtime-only SQL, requires PAT) ───────────
 router.post("/apps/:token/fix-realtime", async (req: Request, res: Response) => {
   const token = req.params["token"] as string;
+  const { pat } = req.body as { pat?: string };
+  if (!pat?.trim()) {
+    res.status(400).json({ ok: false, error: "Supabase PAT required" });
+    return;
+  }
+  const tableName = `${token}_registered_devices`;
+  const sql = `
+    ALTER TABLE ${tableName} REPLICA IDENTITY FULL;
+    DO $rt$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = '${tableName}'
+      ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE ${tableName};
+      END IF;
+    END $rt$;
+  `;
   try {
-    await fixRealtimeDirect(token);
-    res.json({ ok: true, message: "REPLICA IDENTITY FULL + supabase_realtime publication set!" });
+    await runSqlViaMgmt(sql, pat.trim());
+    res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
   }
