@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Trash2, Power, PowerOff, RefreshCw,
-  Smartphone, ChevronRight, Copy, CheckCircle, X, Key
+  Smartphone, Copy, CheckCircle, X, Key
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import type { AdminApp } from "@/lib/types";
 import { getApps, createApp, updateApp, deleteApp, genToken, getConstantsKt, getPat, savePat } from "@/lib/supabase";
 
-interface AppsProps { onOpenApp: (app: AdminApp) => void; }
-
-export default function Apps({ onOpenApp }: AppsProps) {
+export default function Apps() {
   const [apps, setApps] = useState<AdminApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -233,10 +231,6 @@ export default function Apps({ onOpenApp }: AppsProps) {
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
 
-                      <button onClick={() => onOpenApp(app)}
-                              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-400 hover:text-white transition-colors">
-                        Devices <ChevronRight className="w-3 h-3" />
-                      </button>
                     </div>
                   </div>
 

