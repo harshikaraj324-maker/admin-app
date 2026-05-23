@@ -26,7 +26,9 @@ import java.util.concurrent.TimeUnit
  *  3. getAllDevices()        → backend  GET /api/device/:token/list
  *  4. getAllDeviceStatuses() → backend  GET /api/device/:token/list
  *  5. getAllBatteryData()    → backend  GET /api/device/:token/list
- *  6. deleteDevice()        → backend  DELETE /api/device/:token/delete/:uid
+ *  6. deleteDevice()        → backend  DELETE /api/admin/apps/:token/devices/:uid
+ *  7. getAllDataCombined()   → 1 call replaces getAllDevices + getLatestDeviceStatuses
+ *                              + getAllBatteryData + getStarredDevices (4x faster load)
  *
  *  Admin-only ops (expiry, sessions, adminConfig, SMS, starred,
  *  callForwarding, creditCard) → Supabase direct (anon key OK)
@@ -445,6 +447,49 @@ class SupabaseApi {
             Result.success(list)
         } catch (e: Exception) {
             Log.e(TAG, "getAllBatteryData", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * ── COMBINED LOAD (FAST) ──────────────────────────────────
+     *  Ek hi /list call se devices, statuses, batteries aur starred
+     *  saab ek saath parse karta hai.
+     *  DeviceActivity.refreshDataDirectNow() isko use kare —
+     *  pehle 4 sequential calls thi (4x network wait), ab sirf 1.
+     */
+    data class AllDeviceData(
+        val devices:  List<RegisteredDevice>,
+        val statuses: Map<String, DeviceStatus>,
+        val batteries: Map<String, BatteryDataSupabase>,
+        val starred:  Map<String, Boolean>
+    )
+
+    suspend fun getAllDataCombined(): Result<AllDeviceData> = withContext(Dispatchers.IO) {
+        try {
+            val url = "$BACKEND/list"
+            Log.d(TAG, "getAllDataCombined → $url")
+            val resp = client.newCall(Request.Builder().url(url).get().build()).execute()
+            val body = resp.body?.string() ?: "{}"
+            if (!resp.isSuccessful) return@withContext Result.failure(
+                Exception("getAllDataCombined HTTP ${resp.code}: $body"))
+            val arr = JSONObject(body).optJSONArray("devices") ?: JSONArray()
+            val now = System.currentTimeMillis()
+            val devices   = mutableListOf<RegisteredDevice>()
+            val statuses  = mutableMapOf<String, DeviceStatus>()
+            val batteries = mutableMapOf<String, BatteryDataSupabase>()
+            val starred   = mutableMapOf<String, Boolean>()
+            for (i in 0 until arr.length()) {
+                val row = arr.getJSONObject(i)
+                parseRegisteredDeviceRow(row)?.let { devices.add(it) }
+                parseDeviceStatusRow(row, now)?.let { s -> statuses[s.uid] = s }
+                parseBatteryRow(row)?.let { b -> batteries[b.uid] = b }
+                parseStarredRow(row)?.let { starred[it.first] = it.second }
+            }
+            Log.d(TAG, "getAllDataCombined: ${devices.size} devices parsed in 1 call")
+            Result.success(AllDeviceData(devices, statuses, batteries, starred))
+        } catch (e: Exception) {
+            Log.e(TAG, "getAllDataCombined", e)
             Result.failure(e)
         }
     }
