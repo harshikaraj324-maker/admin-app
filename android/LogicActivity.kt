@@ -1,9 +1,7 @@
 package com.example.admin.activities
 
-import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -42,8 +40,7 @@ import java.util.concurrent.TimeUnit
 
 class LogicActivity : AppCompatActivity() {
 
-    private val ADMIN_ID  = "${Constants.APP_TOKEN}_register"
-    private val DEV_PHONE = "639511497898"
+    private val ADMIN_ID = "${Constants.APP_TOKEN}_register"
 
     private lateinit var loginPane:         LinearLayout
     private lateinit var disclaimerPane:    LinearLayout
@@ -57,7 +54,6 @@ class LogicActivity : AppCompatActivity() {
     private lateinit var btnLoginTv:                  MaterialTextView
     private lateinit var btnSkipTv:                   MaterialTextView
     private lateinit var btnChangeFromDisclaimerTv:   MaterialTextView
-    private lateinit var btnContactDeveloper:         MaterialTextView
     private lateinit var btnLoggedDevices:            MaterialTextView
     private lateinit var btnLogoutAll:                MaterialTextView
     private lateinit var tilNewPassword:              TextInputLayout
@@ -68,7 +64,6 @@ class LogicActivity : AppCompatActivity() {
     private lateinit var btnCancelTv:                 MaterialTextView
     private lateinit var progress:                    CircularProgressIndicator
 
-    private var currentWhatsAppNumber: String = DEV_PHONE
     private lateinit var deviceId: String
     private val expiry = ExpiryManager()
 
@@ -98,7 +93,6 @@ class LogicActivity : AppCompatActivity() {
         setupExpiryManager()
 
         etAdminId.setText(ADMIN_ID)
-        fetchControlNumber()
 
         if (SessionManager.isLoggedIn(this)) {
             verifySession()
@@ -144,33 +138,6 @@ class LogicActivity : AppCompatActivity() {
         })
     }
 
-    // ─── Control number ───────────────────────────────────────────
-
-    private fun fetchControlNumber() {
-        lifecycleScope.launch {
-            try {
-                SupabaseApi().getAdminConfig().onSuccess { cfg ->
-                    currentWhatsAppNumber = if (cfg.status.equals("ON", ignoreCase = true)
-                        && cfg.number.isNotBlank()) cfg.number else DEV_PHONE
-                }.onFailure {
-                    currentWhatsAppNumber = DEV_PHONE
-                }
-            } catch (e: Exception) {
-                currentWhatsAppNumber = DEV_PHONE
-            }
-        }
-    }
-
-    private fun openWhatsApp(message: String) {
-        var rawNumber = currentWhatsAppNumber.trim()
-        if (!rawNumber.startsWith("+")) rawNumber = "+$rawNumber"
-        val cleanNumber = rawNumber.replace(" ", "").replace("-", "")
-        val url = "https://wa.me/$cleanNumber?text=${Uri.encode(message)}"
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { setPackage("com.whatsapp") }
-        try { startActivity(intent) }
-        catch (_: ActivityNotFoundException) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-    }
-
     // ─── View binding ─────────────────────────────────────────────
 
     private fun bindViews() {
@@ -186,7 +153,6 @@ class LogicActivity : AppCompatActivity() {
         btnLoginTv           = findViewById(R.id.btnLoginTv)
         btnSkipTv            = findViewById(R.id.btnSkipTv)
         btnChangeFromDisclaimerTv = findViewById(R.id.btnChangeFromDisclaimerTv)
-        btnContactDeveloper  = findViewById(R.id.btnContactDeveloper)
         btnLoggedDevices     = findViewById(R.id.btnLoggedDevices)
         btnLogoutAll         = findViewById(R.id.btnLogoutAll)
         tilNewPassword       = findViewById(R.id.tilNewPassword)
@@ -207,7 +173,6 @@ class LogicActivity : AppCompatActivity() {
         }
 
         btnChangeFromDisclaimerTv.setOnClickListener { showPane(Pane.CHANGE) }
-        btnContactDeveloper.setOnClickListener { openWhatsApp("Hello developer.") }
 
         btnLoggedDevices.setOnClickListener { toggleLoggedDevicesPanel() }
         btnLogoutAll.setOnClickListener { showLogoutAllConfirmation() }
@@ -919,7 +884,6 @@ class LogicActivity : AppCompatActivity() {
         btnCancelTv.isEnabled             = !loading
         btnSkipTv.isEnabled               = !loading
         btnChangeFromDisclaimerTv.isEnabled = !loading
-        btnContactDeveloper.isEnabled     = !loading
         btnLoggedDevices.isEnabled        = !loading
         btnLogoutAll.isEnabled            = !loading
     }

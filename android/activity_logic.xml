@@ -409,19 +409,6 @@
                 </LinearLayout>
             </LinearLayout>
 
-            <com.google.android.material.textview.MaterialTextView
-                android:id="@+id/btnContactDeveloper"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:layout_marginTop="16dp"
-                android:gravity="center"
-                android:text=" Contact Developer"
-                android:textStyle="bold"
-                android:textColor="#FF5722"
-                android:background="@drawable/btn_outline_red"
-                android:clickable="true"
-                android:focusable="true"/>
-
             <com.google.android.material.progressindicator.CircularProgressIndicator
                 android:id="@+id/progress"
                 android:layout_width="wrap_content"
