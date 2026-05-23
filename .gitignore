@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Attached assets (temp files, pasted code, sensitive JSONs)
+attached_assets/
