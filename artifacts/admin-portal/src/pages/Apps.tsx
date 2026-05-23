@@ -316,7 +316,7 @@ export default function Apps() {
                       </button>
                       <ChevronRight className="w-3.5 h-3.5 text-slate-700 ml-0.5" />
                     </div>
-                  </button>
+                  </div>
 
                   {/* Realtime panel */}
                   {rtPatId === app.id && (
