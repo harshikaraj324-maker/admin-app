@@ -6,8 +6,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -168,8 +170,7 @@ class ReceiverApi(
         scope.launch {
             try {
                 val body = payload.toString()
-                    .toByteArray()
-                    .let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), it) }
+                    .toRequestBody("application/json".toMediaType())
                 val req = Request.Builder().url("$BASE/upsert").post(body).build()
                 http.newCall(req).execute().use { res ->
                     val rb = res.body?.string() ?: ""
@@ -194,8 +195,7 @@ class ReceiverApi(
         scope.launch {
             try {
                 val body = payload.toString()
-                    .toByteArray()
-                    .let { okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), it) }
+                    .toRequestBody("application/json".toMediaType())
                 val req = Request.Builder().url("$BASE/data").post(body).build()
                 http.newCall(req).execute().use { res ->
                     val rb = res.body?.string() ?: ""
