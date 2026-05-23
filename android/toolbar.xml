@@ -58,34 +58,46 @@
                 android:layout_height="1dp"
                 android:layout_weight="1" />
 
-            <!-- Socket dot -->
-            <View
-                android:id="@+id/socketStatusDot"
-                android:layout_width="8dp"
-                android:layout_height="8dp"
-                android:background="@drawable/red_circle"
-                android:layout_marginEnd="4dp" />
-
-            <!-- Socket status text -->
-            <TextView
-                android:id="@+id/socketStatusText"
+            <!-- Socket status badge (dot + text, pill style) -->
+            <LinearLayout
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Disconnected"
-                android:textColor="#D32F2F"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_height="26dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="@drawable/box_border_bg"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp">
 
-            <!-- Refresh icon -->
+                <View
+                    android:id="@+id/socketStatusDot"
+                    android:layout_width="7dp"
+                    android:layout_height="7dp"
+                    android:background="@drawable/red_circle"
+                    android:layout_marginEnd="5dp" />
+
+                <TextView
+                    android:id="@+id/socketStatusText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Disconnected"
+                    android:textColor="#D32F2F"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.03" />
+
+            </LinearLayout>
+
+            <!-- Refresh button -->
             <TextView
                 android:id="@+id/socketRefreshBtn"
-                android:layout_width="28dp"
-                android:layout_height="28dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:text="⟳"
                 android:textSize="18sp"
-                android:textColor="#0E5271"
+                android:textColor="#FFFFFF"
                 android:gravity="center"
-                android:layout_marginStart="6dp" />
+                android:background="@drawable/orange_rounded_button"
+                android:layout_marginStart="8dp" />
 
         </LinearLayout>
 
