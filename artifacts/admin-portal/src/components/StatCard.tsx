@@ -9,25 +9,24 @@ interface StatCardProps {
 }
 
 const colors = {
-  blue:  { bg: "bg-blue-500/10",    icon: "text-blue-400",    border: "border-blue-500/20" },
-  green: { bg: "bg-emerald-500/10", icon: "text-emerald-400", border: "border-emerald-500/20" },
-  red:   { bg: "bg-red-500/10",     icon: "text-red-400",     border: "border-red-500/20" },
-  amber: { bg: "bg-amber-500/10",   icon: "text-amber-400",   border: "border-amber-500/20" },
-  slate: { bg: "bg-slate-700/30",   icon: "text-slate-400",   border: "border-slate-700/50" },
+  blue:  { dot: "bg-blue-500",    icon: "text-blue-400"    },
+  green: { dot: "bg-emerald-500", icon: "text-emerald-400" },
+  red:   { dot: "bg-red-500",     icon: "text-red-400"     },
+  amber: { dot: "bg-amber-500",   icon: "text-amber-400"   },
+  slate: { dot: "bg-slate-500",   icon: "text-slate-400"   },
 };
 
 export default function StatCard({ label, value, icon: Icon, color = "blue", sub }: StatCardProps) {
   const c = colors[color];
   return (
-    <div className={`bg-[#111827] border ${c.border} rounded-2xl p-3 sm:p-5 flex items-start gap-2.5 sm:gap-4`}>
-      <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl ${c.bg} flex items-center justify-center flex-shrink-0`}>
-        <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${c.icon}`} />
+    <div className="bg-[#0d1220] border border-slate-800/80 rounded-xl px-3.5 py-3 flex items-center gap-3">
+      <Icon className={`w-4 h-4 flex-shrink-0 ${c.icon}`} />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-slate-500 leading-none mb-0.5">{label}</p>
+        <p className="text-base font-bold text-white tabular-nums leading-none">{value}</p>
+        {sub && <p className="text-[10px] text-slate-600 mt-0.5 leading-none">{sub}</p>}
       </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xl sm:text-2xl font-bold text-white tabular-nums leading-tight">{value}</p>
-        <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5 leading-tight">{label}</p>
-        {sub && <p className="text-[10px] sm:text-xs text-slate-600 mt-0.5 hidden sm:block">{sub}</p>}
-      </div>
+      <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${c.dot} opacity-60`} />
     </div>
   );
 }
