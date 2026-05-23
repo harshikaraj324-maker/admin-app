@@ -1,4 +1,5 @@
 import { Router, type IRouter, type Request, type Response } from "express";
+import pg from "pg";
 import {
   checkSetup,
   runSetup,
@@ -11,6 +12,32 @@ import {
   deleteDevice,
   fixDeviceTable,
 } from "../lib/supabase-admin.js";
+
+// ── PAT-free realtime fix — uses SUPABASE_DB_URL direct connection ──────────
+async function fixRealtimeDirect(appToken: string): Promise<void> {
+  const dbUrl = process.env["SUPABASE_DB_URL"];
+  if (!dbUrl) throw new Error("SUPABASE_DB_URL env var not set");
+  const tableName = `${appToken}_registered_devices`;
+  const client = new pg.Client({ connectionString: dbUrl, ssl: { rejectUnauthorized: false } });
+  await client.connect();
+  try {
+    await client.query(`ALTER TABLE ${tableName} REPLICA IDENTITY FULL`);
+    await client.query(`
+      DO $rt$ BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_publication_tables
+          WHERE pubname = 'supabase_realtime'
+            AND schemaname = 'public'
+            AND tablename = '${tableName}'
+        ) THEN
+          ALTER PUBLICATION supabase_realtime ADD TABLE ${tableName};
+        END IF;
+      END $rt$
+    `);
+  } finally {
+    await client.end();
+  }
+}
 
 const router: IRouter = Router();
 
@@ -93,6 +120,17 @@ router.delete("/apps/:id", async (req: Request, res: Response) => {
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Fix Realtime — no PAT needed, uses SUPABASE_DB_URL ──────
+router.post("/apps/:token/fix-realtime", async (req: Request, res: Response) => {
+  const token = req.params["token"] as string;
+  try {
+    await fixRealtimeDirect(token);
+    res.json({ ok: true, message: "REPLICA IDENTITY FULL + supabase_realtime publication set!" });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
   }
 });
 

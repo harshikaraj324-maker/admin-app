@@ -112,6 +112,15 @@ export async function deleteApp(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+// ─── Fix Realtime — no PAT needed ────────────────────────
+export async function fixRealtime(token: string): Promise<void> {
+  const res = await apiFetch(`/apps/${token}/fix-realtime`, { method: "POST" });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({ error: res.statusText }))) as { error?: string };
+    throw new Error(body.error ?? `Fix failed (${res.status})`);
+  }
+}
+
 // ─── Devices ──────────────────────────────────────────────
 
 export async function getDevices(appToken: string): Promise<Device[]> {

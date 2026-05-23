@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Trash2, Power, PowerOff, RefreshCw,
-  Smartphone, Copy, CheckCircle, X, Key
+  Smartphone, Copy, CheckCircle, X, Key, Radio
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import type { AdminApp } from "@/lib/types";
-import { getApps, createApp, updateApp, deleteApp, genToken, getConstantsKt, getPat, savePat } from "@/lib/supabase";
+import { getApps, createApp, updateApp, deleteApp, genToken, getConstantsKt, getPat, savePat, fixRealtime } from "@/lib/supabase";
 
 export default function Apps() {
   const [apps, setApps] = useState<AdminApp[]>([]);
@@ -22,6 +22,8 @@ export default function Apps() {
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [ktId, setKtId] = useState<string | null>(null);
+  const [fixingRtId, setFixingRtId] = useState<string | null>(null);
+  const [rtMsg, setRtMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -65,6 +67,19 @@ export default function Apps() {
     if (!confirm("Ye app delete karo? Device data table bhi hatao Supabase se manually.")) return;
     try { await deleteApp(id); setApps((p) => p.filter((a) => a.id !== id)); }
     catch (e: unknown) { alert(e instanceof Error ? e.message : "Error"); }
+  };
+
+  const handleFixRealtime = async (app: AdminApp) => {
+    setFixingRtId(app.id); setRtMsg(null);
+    try {
+      await fixRealtime(app.token);
+      setRtMsg({ id: app.id, ok: true, text: "✓ Realtime enabled! Live data ab kaam karega." });
+    } catch (e: unknown) {
+      setRtMsg({ id: app.id, ok: false, text: e instanceof Error ? e.message : "Fix failed" });
+    } finally {
+      setFixingRtId(null);
+      setTimeout(() => setRtMsg(null), 6000);
+    }
   };
 
   return (
@@ -211,6 +226,19 @@ export default function Apps() {
                     </div>
 
                     <div className="flex items-center gap-1">
+                      {/* Fix Realtime — no PAT needed */}
+                      <button
+                        onClick={() => void handleFixRealtime(app)}
+                        disabled={fixingRtId === app.id}
+                        title="Enable Live Realtime (1-click, no PAT needed)"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-violet-900/25 hover:bg-violet-900/45 text-violet-400 text-xs font-medium transition-colors disabled:opacity-50"
+                      >
+                        {fixingRtId === app.id
+                          ? <span className="w-3 h-3 border border-violet-400/30 border-t-violet-400 rounded-full animate-spin" />
+                          : <Radio className="w-3 h-3" />}
+                        <span className="hidden sm:inline">Live</span>
+                      </button>
+
                       <button onClick={() => handleToggle(app)} title={app.is_active ? "Disable" : "Enable"}
                               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                 app.is_active
@@ -230,9 +258,18 @@ export default function Apps() {
                               className="p-1.5 rounded-lg hover:bg-red-900/25 text-slate-600 hover:text-red-400 transition-colors">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
-
                     </div>
                   </div>
+
+                  {rtMsg?.id === app.id && (
+                    <div className={`mx-4 mb-3 px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between ${
+                      rtMsg.ok ? "bg-violet-900/20 text-violet-300 border border-violet-800/40"
+                               : "bg-red-900/20 text-red-400 border border-red-800/40"
+                    }`}>
+                      <span>{rtMsg.text}</span>
+                      <button onClick={() => setRtMsg(null)} className="ml-2 opacity-60 hover:opacity-100">×</button>
+                    </div>
+                  )}
 
                   {showKt && (
                     <div className="border-t border-slate-800/60 bg-[#080c16] px-4 py-4">
