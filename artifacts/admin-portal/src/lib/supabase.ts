@@ -14,10 +14,12 @@ export function getPat(): string {
 }
 
 async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const token = localStorage.getItem("admin_session_token") ?? "";
   const res = await fetch(`${API}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
   });

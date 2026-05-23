@@ -1,10 +1,12 @@
-import { LayoutDashboard, Boxes, Settings } from "lucide-react";
+import { LayoutDashboard, Boxes, Settings, LogOut } from "lucide-react";
+import { logoutApi } from "@/lib/auth";
 
 type Page = "dashboard" | "apps" | "settings";
 
 interface SidebarProps {
   page: Page;
   onNav: (p: Page) => void;
+  onLogout: () => void;
 }
 
 const NAV = [
@@ -13,7 +15,12 @@ const NAV = [
   { id: "settings"  as Page, label: "Settings",    icon: Settings },
 ];
 
-export default function Sidebar({ page, onNav }: SidebarProps) {
+export default function Sidebar({ page, onNav, onLogout }: SidebarProps) {
+  const handleLogout = async () => {
+    await logoutApi();
+    onLogout();
+  };
+
   return (
     <>
       {/* ── Desktop sidebar (768px+) ── */}
@@ -50,14 +57,19 @@ export default function Sidebar({ page, onNav }: SidebarProps) {
           })}
         </nav>
 
-        <div className="px-4 py-3 border-t border-slate-800/70">
-          <p className="text-[10px] text-slate-600 truncate">imfwqoocwfvvtjghgofi</p>
-          <p className="text-[10px] text-slate-700">Supabase Project</p>
+        <div className="px-2 py-3 border-t border-slate-800/70">
+          <button
+            onClick={() => void handleLogout()}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-slate-600 hover:text-red-400 hover:bg-red-900/15 transition-all"
+          >
+            <LogOut className="w-4 h-4 flex-shrink-0" />
+            Logout
+          </button>
         </div>
       </aside>
 
       {/* ── Mobile bottom nav (below 768px) ── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1220] border-t border-slate-800/70 flex safe-area-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#0d1220] border-t border-slate-800/70 flex">
         {NAV.map(({ id, label, icon: Icon }) => {
           const active = page === id;
           return (
@@ -73,6 +85,13 @@ export default function Sidebar({ page, onNav }: SidebarProps) {
             </button>
           );
         })}
+        <button
+          onClick={() => void handleLogout()}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-3 text-slate-600 active:text-red-400 transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Logout</span>
+        </button>
       </nav>
     </>
   );
