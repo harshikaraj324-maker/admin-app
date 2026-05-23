@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft, RefreshCw, Trash2,
-  Smartphone, Wifi, WifiOff, Search, Radio
+  Smartphone, Wifi, Search, Radio, ChevronDown, ChevronRight, Settings2
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import StatCard from "@/components/StatCard";
@@ -23,6 +23,8 @@ function mergeDevice(list: Device[], updated: Device): Device[] {
   return next;
 }
 
+const isSystemEntry = (d: Device) => d.sub_id.startsWith("admin_");
+
 export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +33,8 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [filter, setFilter] = useState<FilterType>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
+  const [showSystem, setShowSystem] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   const load = useCallback(async () => {
@@ -52,10 +56,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
       ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       ws.onopen = () => setWsConnected(true);
-      ws.onclose = () => {
-        setWsConnected(false);
-        reconnectTimer = setTimeout(connect, 4000);
-      };
+      ws.onclose = () => { setWsConnected(false); reconnectTimer = setTimeout(connect, 4000); };
       ws.onerror = () => ws.close();
       ws.onmessage = (e) => {
         try {
@@ -76,7 +77,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   }, [app.token]);
 
   const handleDelete = async (uid: string) => {
-    if (!confirm(`Device ${uid} delete karo?`)) return;
+    if (!confirm(`Delete ${uid}?`)) return;
     setBusyId(uid);
     try {
       await deleteDevice(app.token, uid);
@@ -93,12 +94,14 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
 
   const fmt = (ts?: number) => {
     if (!ts || ts === 0) return "—";
-    return new Date(ts).toLocaleString("en-IN", {
-      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
-    });
+    return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   };
 
-  const filtered = devices.filter((d) => {
+  // Split real devices vs system entries
+  const realDevices = devices.filter((d) => !isSystemEntry(d));
+  const systemEntries = devices.filter((d) => isSystemEntry(d));
+
+  const filtered = realDevices.filter((d) => {
     const q = search.toLowerCase();
     const matchSearch =
       !q ||
@@ -107,13 +110,11 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
         .some((v) => v?.toLowerCase().includes(q));
     const online = isOnline(d);
     const matchFilter =
-      filter === "all"    ? true :
-      filter === "online" ? online :
-      filter === "offline" ? !online : true;
+      filter === "all" ? true : filter === "online" ? online : !online;
     return matchSearch && matchFilter;
   });
 
-  const stats = calcStats(devices);
+  const stats = calcStats(realDevices);
 
   return (
     <div className="flex-1 overflow-auto h-full bg-[#080c16]">
@@ -136,7 +137,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
           </div>
         </div>
         <button onClick={load} disabled={loading}
-                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors disabled:opacity-50 flex-shrink-0">
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors disabled:opacity-50">
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
@@ -154,32 +155,31 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
           </div>
         ) : (
           <>
-            {/* Stats — only Total and Online */}
-            <div className="grid grid-cols-2 gap-2 sm:gap-3">
-              <StatCard label="Total"  value={stats.total}  icon={Smartphone} color="blue"  />
-              <StatCard label="Online" value={stats.online} icon={Wifi}        color="green" />
+            {/* Stats */}
+            <div className="grid grid-cols-2 gap-2">
+              <StatCard label="Devices" value={stats.total}  icon={Smartphone} color="blue" />
+              <StatCard label="Online"  value={stats.online} icon={Wifi}        color="green" />
             </div>
 
-            {/* Search */}
+            {/* Search + Filter */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 pointer-events-none" />
               <input value={search} onChange={(e) => setSearch(e.target.value)}
-                     placeholder="ID, device, SIM…"
+                     placeholder="Search by ID, device, SIM…"
                      className="w-full bg-[#0d1220] border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-sm placeholder-slate-700 text-white focus:outline-none focus:border-blue-500/50 transition-colors" />
             </div>
 
-            {/* Filter */}
-            <div className="flex gap-1.5">
+            <div className="flex gap-1.5 items-center">
               {(["all", "online", "offline"] as FilterType[]).map((f) => (
                 <button key={f} onClick={() => setFilter(f)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-colors ${
                           filter === f ? "bg-blue-600 text-white" : "bg-[#0d1220] border border-slate-800 text-slate-500 hover:text-slate-300"
                         }`}>{f}</button>
               ))}
-              <span className="ml-auto text-xs text-slate-600 self-center">{filtered.length} devices</span>
+              <span className="ml-auto text-xs text-slate-600">{filtered.length} devices</span>
             </div>
 
-            {/* Device list */}
+            {/* Real device list */}
             {filtered.length === 0 ? (
               <div className="text-center py-12 bg-[#0d1220] border border-slate-800 rounded-2xl">
                 <Smartphone className="w-7 h-7 mx-auto text-slate-700 mb-3" />
@@ -200,14 +200,11 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
                     <div key={d.sub_id}
                          className="bg-[#0d1220] border border-slate-800/80 rounded-2xl px-3 sm:px-4 py-3">
                       <div className="flex items-start gap-2.5">
-                        {/* Status dot */}
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
                           online ? "bg-emerald-900/20" : "bg-slate-800"
                         }`}>
                           <Smartphone className={`w-4 h-4 ${online ? "text-emerald-400" : "text-slate-500"}`} />
                         </div>
-
-                        {/* Info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-mono text-xs sm:text-sm text-white font-semibold truncate max-w-[160px] sm:max-w-none">{d.sub_id}</span>
@@ -222,8 +219,6 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
                             {dj.last_seen_at ? ` · Seen ${fmt(dj.last_seen_at)}` : ""}
                           </p>
                         </div>
-
-                        {/* Delete only */}
                         <button onClick={() => void handleDelete(d.sub_id)} disabled={busy}
                                 className="p-1.5 rounded-lg hover:bg-red-900/25 text-slate-700 hover:text-red-400 transition-colors disabled:opacity-50 flex-shrink-0 mt-0.5">
                           {busy
@@ -234,6 +229,78 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* System Entries section */}
+            {systemEntries.length > 0 && (
+              <div className="pt-1">
+                <button
+                  onClick={() => setShowSystem((v) => !v)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-[#0d1220] border border-slate-800/60 hover:border-slate-700 transition-colors text-left"
+                >
+                  <Settings2 className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
+                  <span className="text-xs font-medium text-slate-400 flex-1">
+                    System Entries ({systemEntries.length})
+                  </span>
+                  <span className="text-[10px] text-slate-600">tap to {showSystem ? "hide" : "view"}</span>
+                  {showSystem
+                    ? <ChevronDown className="w-3.5 h-3.5 text-slate-600" />
+                    : <ChevronRight className="w-3.5 h-3.5 text-slate-600" />}
+                </button>
+
+                {showSystem && (
+                  <div className="mt-2 space-y-2">
+                    {systemEntries.map((d) => {
+                      const isExpanded = expandedId === d.sub_id;
+                      const raw = d.data_json as unknown as Record<string, unknown> ?? {};
+                      const busy = busyId === d.sub_id;
+                      return (
+                        <div key={d.sub_id}
+                             className="bg-[#0d1220] border border-slate-700/50 rounded-xl overflow-hidden">
+                          <button
+                            onClick={() => setExpandedId(isExpanded ? null : d.sub_id)}
+                            className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-800/30 transition-colors text-left"
+                          >
+                            <Settings2 className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+                            <span className="font-mono text-xs text-slate-400 flex-1 truncate">{d.sub_id}</span>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); void handleDelete(d.sub_id); }}
+                              disabled={busy}
+                              className="p-1 rounded hover:bg-red-900/25 text-slate-700 hover:text-red-400 transition-colors"
+                            >
+                              {busy
+                                ? <span className="w-3 h-3 border border-slate-500/30 border-t-slate-500 rounded-full animate-spin block" />
+                                : <Trash2 className="w-3 h-3" />}
+                            </button>
+                            {isExpanded
+                              ? <ChevronDown className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />
+                              : <ChevronRight className="w-3.5 h-3.5 text-slate-600 flex-shrink-0" />}
+                          </button>
+
+                          {isExpanded && (
+                            <div className="border-t border-slate-800/60 px-3 py-3">
+                              {Object.keys(raw).length === 0 ? (
+                                <p className="text-xs text-slate-600">No data stored.</p>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {Object.entries(raw).map(([k, v]) => (
+                                    <div key={k} className="flex items-start gap-2">
+                                      <span className="text-[10px] font-mono text-slate-600 flex-shrink-0 min-w-[100px] pt-0.5">{k}</span>
+                                      <span className="text-xs font-mono text-slate-300 break-all select-all">
+                                        {typeof v === "object" ? JSON.stringify(v) : String(v ?? "")}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </>
