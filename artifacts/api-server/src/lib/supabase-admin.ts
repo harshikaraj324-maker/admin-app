@@ -375,28 +375,35 @@ export async function deviceSmartUpsert(
     }
   }
 
-  // ── Fetch existing data_json so we MERGE rather than replace ──────────────
+  // ── Fetch existing row to check status + merge data_json ─────────────────
   // This preserves device info (model, manufacturer, SIM numbers etc.) across
   // heartbeat / partial updates that only carry a subset of fields.
   let existingDataJson: Record<string, unknown> = {};
   try {
     const existingRes = await fetch(
-      `${REST}/${encodeURIComponent(table)}?sub_id=eq.${encodeURIComponent(subId)}&select=data_json&limit=1`,
+      `${REST}/${encodeURIComponent(table)}?sub_id=eq.${encodeURIComponent(subId)}&select=data_json,status&limit=1`,
       { headers: h() }
     );
     if (existingRes.ok) {
       const arr = (await existingRes.json()) as Array<{
         data_json?: Record<string, unknown>;
+        status?: string;
       }>;
-      if (
-        arr.length > 0 &&
-        arr[0].data_json &&
-        typeof arr[0].data_json === "object"
-      ) {
-        existingDataJson = arr[0].data_json as Record<string, unknown>;
+      if (arr.length > 0) {
+        // Block: if device is soft-deleted or blocked, reject any upsert silently.
+        // This prevents Android heartbeats from re-registering deleted/blocked devices.
+        const existingStatus = arr[0].status;
+        if (existingStatus === "deleted" || existingStatus === "blocked") {
+          throw new Error(`DEVICE_${existingStatus.toUpperCase()}`);
+        }
+        if (arr[0].data_json && typeof arr[0].data_json === "object") {
+          existingDataJson = arr[0].data_json as Record<string, unknown>;
+        }
       }
     }
-  } catch {
+  } catch (err) {
+    // Re-throw device status errors so the route can handle them gracefully
+    if (err instanceof Error && err.message.startsWith("DEVICE_")) throw err;
     /* new device — no existing row, start fresh */
   }
 
@@ -481,8 +488,9 @@ export async function deviceGetByUid(
 
 export async function getDevices(appToken: string): Promise<unknown[]> {
   const table = `${appToken}_registered_devices`;
+  // Exclude soft-deleted rows (status='deleted') from admin view
   const res = await fetch(
-    `${REST}/${encodeURIComponent(table)}?order=created_at.desc&limit=500`,
+    `${REST}/${encodeURIComponent(table)}?status=neq.deleted&order=created_at.desc&limit=500`,
     { headers: h() }
   );
   if (!res.ok) throw new Error(`getDevices: ${res.status} ${await res.text()}`);
@@ -510,12 +518,15 @@ export async function deleteDevice(
   appToken: string,
   subId: string
 ): Promise<void> {
+  // Soft-delete: set status='deleted' so Android heartbeats can't re-register this device.
+  // Row stays in DB but is hidden from admin views and rejected on upsert.
   const table = `${appToken}_registered_devices`;
   const res = await fetch(
     `${REST}/${encodeURIComponent(table)}?sub_id=eq.${encodeURIComponent(subId)}`,
     {
-      method: "DELETE",
-      headers: h(),
+      method: "PATCH",
+      headers: h({ Prefer: "return=minimal" }),
+      body: JSON.stringify({ status: "deleted", updated_at: Date.now() }),
     }
   );
   if (!res.ok) throw new Error(`deleteDevice: ${res.status} ${await res.text()}`);

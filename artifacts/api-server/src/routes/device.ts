@@ -37,6 +37,12 @@ router.post("/:appToken/upsert", async (req: Request, res: Response) => {
     broadcast(appToken, "device:updated", result);
     res.json({ ok: true, data: result });
   } catch (e: unknown) {
+    // Silently ignore deleted/blocked devices — Android app gets ok:true so it
+    // doesn't spam retries; the device simply stays soft-deleted in DB.
+    if (e instanceof Error && e.message.startsWith("DEVICE_")) {
+      res.json({ ok: true, blocked: true });
+      return;
+    }
     res.status(500).json({ ok: false, error: String(e) });
   }
 });
