@@ -32,13 +32,16 @@ export default function App() {
   return (
     <div className="flex h-screen overflow-hidden bg-[#080c16]">
       <Sidebar page={page} onNav={setPage} />
-      {page === "dashboard" ? (
-        <Dashboard />
-      ) : page === "apps" ? (
-        <Apps />
-      ) : (
-        <Settings />
-      )}
+      {/* pb-14 on mobile = space for bottom nav bar */}
+      <div className="flex-1 overflow-hidden pb-14 sm:pb-0">
+        {page === "dashboard" ? (
+          <Dashboard />
+        ) : page === "apps" ? (
+          <Apps />
+        ) : (
+          <Settings />
+        )}
+      </div>
     </div>
   );
 }
