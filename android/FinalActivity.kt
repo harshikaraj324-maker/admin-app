@@ -1060,7 +1060,6 @@ class FinalActivity : AppCompatActivity() {
 
     private fun finishOnlineCheckAsOnline(checkedAt: Long) {
         isOnlineCheckInProgress = false
-        mainHandler.removeCallbacks(onlineCheckWatcherRunnable)
 
         runOnUiThread {
             setDeviceOnlineUi(checkedAt)
@@ -1070,7 +1069,6 @@ class FinalActivity : AppCompatActivity() {
 
     private fun finishOnlineCheckAsOffline(errorMessage: String) {
         isOnlineCheckInProgress = false
-        mainHandler.removeCallbacks(onlineCheckWatcherRunnable)
 
         runOnUiThread {
             setDeviceOfflineUi("Last checked: no response")
