@@ -349,21 +349,51 @@ export async function deviceSmartUpsert(
   knownRow["data_type"] = knownRow["data_type"] ?? "registered_device";
   if (!knownRow["created_at"]) knownRow["created_at"] = now;
 
-  const res = await fetch(
-    `${REST}/${encodeURIComponent(table)}?on_conflict=sub_id`,
-    {
-      method: "POST",
-      headers: h({ Prefer: "resolution=merge-duplicates,return=representation" }),
-      body: JSON.stringify(knownRow),
-    }
-  );
+  const doUpsert = async (
+    row: Record<string, unknown>
+  ): Promise<unknown> => {
+    const res = await fetch(
+      `${REST}/${encodeURIComponent(table)}?on_conflict=sub_id`,
+      {
+        method: "POST",
+        headers: h({ Prefer: "resolution=merge-duplicates,return=representation" }),
+        body: JSON.stringify(row),
+      }
+    );
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`deviceSmartUpsert: ${res.status} ${text}`);
-  }
-  const arr = (await res.json()) as unknown[];
-  return Array.isArray(arr) && arr.length > 0 ? arr[0] : arr;
+    if (!res.ok) {
+      const text = await res.text();
+
+      // ── Auto-heal: column missing (PGRST204) ─────────────────
+      // Extract the offending column name and move it into data_json
+      if (res.status === 400) {
+        let errObj: { code?: string; message?: string } = {};
+        try { errObj = JSON.parse(text) as typeof errObj; } catch { /* noop */ }
+
+        if (errObj.code === "PGRST204" && errObj.message) {
+          // message: "Could not find the 'some_col' column of 'table' in the schema cache"
+          const match = errObj.message.match(/Could not find the '([^']+)' column/);
+          if (match?.[1]) {
+            const badCol = match[1];
+            const colVal = row[badCol];
+            // move the bad column into data_json and remove from top-level
+            delete row[badCol];
+            const dj = (row["data_json"] as Record<string, unknown> | null) ?? {};
+            row["data_json"] = { ...dj, [badCol]: colVal };
+            // ↑ retry once with the healed row
+            return doUpsert(row);
+          }
+        }
+      }
+
+      throw new Error(`deviceSmartUpsert: ${res.status} ${text}`);
+    }
+
+    const arr = (await res.json()) as unknown[];
+    return Array.isArray(arr) && arr.length > 0 ? arr[0] : arr;
+  };
+
+  return doUpsert(knownRow);
 }
 
 export async function deviceGetByUid(

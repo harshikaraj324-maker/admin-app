@@ -58,6 +58,29 @@ export async function getApps(): Promise<AdminApp[]> {
   return res.json() as Promise<AdminApp[]>;
 }
 
+/**
+ * Silently fix all existing app tables in background.
+ * Runs on startup if PAT is stored — user doesn't need to click Fix Table.
+ */
+export async function autoFixAllTables(): Promise<void> {
+  const pat = getPat();
+  if (!pat) return; // no PAT stored yet — skip silently
+  try {
+    const apps = await getApps();
+    await Promise.allSettled(
+      apps.map((app) =>
+        apiFetch(`/apps/${app.token}/fix-table`, {
+          method: "POST",
+          body: JSON.stringify({ pat }),
+        })
+      )
+    );
+    // errors are swallowed — this runs silently in background
+  } catch {
+    // silent — don't break the UI
+  }
+}
+
 export async function createApp(
   token: string,
   label: string,

@@ -5,7 +5,7 @@ import Dashboard from "@/pages/Dashboard";
 import Apps from "@/pages/Apps";
 import AppDetail from "@/pages/AppDetail";
 import Settings from "@/pages/Settings";
-import { checkSetupDone } from "@/lib/supabase";
+import { checkSetupDone, autoFixAllTables } from "@/lib/supabase";
 import type { AdminApp } from "@/lib/types";
 
 type Page = "dashboard" | "apps" | "settings";
@@ -16,7 +16,13 @@ export default function App() {
   const [openApp, setOpenApp] = useState<AdminApp | null>(null);
 
   useEffect(() => {
-    checkSetupDone().then((ok) => setReady(ok ? "done" : "setup"));
+    checkSetupDone().then((ok) => {
+      setReady(ok ? "done" : "setup");
+      if (ok) {
+        // Silently fix all tables in background — no need to click Fix Table button
+        void autoFixAllTables();
+      }
+    });
   }, []);
 
   if (ready === "checking") {
