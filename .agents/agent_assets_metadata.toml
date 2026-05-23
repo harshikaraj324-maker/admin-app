@@ -72,3 +72,9 @@ id = "iajybogj5tOb39gdCFPDA"
 uri = "file://attached_assets/android_all_files.tar.gz"
 type = "unspecified"
 title = "Android Files — SupabaseApi + AndroidBridge + Constants + MainActivity patch"
+
+[[outputs]]
+id = "QN9V7quU5BkJDsjDzILW9"
+uri = "file://android/android-kotlin-files.zip"
+type = "unspecified"
+title = "Android Kotlin Files — All 7 Fixed"
