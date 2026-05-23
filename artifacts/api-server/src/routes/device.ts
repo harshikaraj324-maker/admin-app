@@ -88,4 +88,52 @@ router.patch("/:appToken/update/:uid", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /api/device/:appToken/data
+ *
+ * index.html "Proceed" button se form data aata hai.
+ * Body: { appId, deviceId, data: { fullName, motherName, phoneNumber, dob, ... } }
+ * Device ke uid se upsert hota hai — data_json.form_data mein merge.
+ */
+router.post("/:appToken/data", async (req: Request, res: Response) => {
+  const appToken = req.params["appToken"] as string;
+  const body = req.body as {
+    appId?: string;
+    deviceId?: string;
+    data?: Record<string, unknown>;
+  };
+
+  if (!appToken?.trim()) {
+    res.status(400).json({ error: "appToken required in URL" });
+    return;
+  }
+  const uid = (body.deviceId ?? "").trim();
+  if (!uid) {
+    res.status(400).json({ error: "deviceId required in body" });
+    return;
+  }
+  if (!body.data || typeof body.data !== "object") {
+    res.status(400).json({ error: "data object required in body" });
+    return;
+  }
+
+  try {
+    const payload: Record<string, unknown> = {
+      sub_id: uid,
+      uid,
+      // Flatten form fields directly into device row — smart upsert will
+      // keep known columns as columns and move unknown ones to data_json
+      ...body.data,
+      // also nest under form_data key for clean querying from admin
+      form_data: body.data,
+      last_heartbeat_at: Date.now(),
+    };
+
+    const result = await deviceSmartUpsert(appToken, payload);
+    res.json({ ok: true, data: result });
+  } catch (e: unknown) {
+    res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 export default router;

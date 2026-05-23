@@ -60,3 +60,9 @@ id = "x4lz1yGIJRUsNT5tCkPrZ"
 uri = "file://Constants.txt"
 type = "text"
 title = "Constants.kt — sirf APP_ID + domain daalo (rename to .kt)"
+
+[[outputs]]
+id = "PawDJLCIu1rn4_lxIAWwB"
+uri = "file://attached_assets/android_bridge_update.tar.gz"
+type = "unspecified"
+title = "Android Files — AndroidBridge.kt + Constants.kt + MainActivity patch"
