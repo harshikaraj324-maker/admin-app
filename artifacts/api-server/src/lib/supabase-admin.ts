@@ -287,9 +287,10 @@ export async function fixDeviceTable(
 // ─── Apps (REST API — no Postgres needed) ───────────────────
 
 export async function getApps(): Promise<unknown[]> {
-  const res = await fetch(`${REST}/admin_tokens?order=created_at.desc`, {
-    headers: h(),
-  });
+  const res = await fetch(
+    `${REST}/admin_tokens?token=not.eq.__admin_password__&order=created_at.desc`,
+    { headers: h() }
+  );
   if (!res.ok) throw new Error(`getApps: ${res.status} ${await res.text()}`);
   return res.json() as Promise<unknown[]>;
 }
