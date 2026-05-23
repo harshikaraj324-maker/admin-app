@@ -53,4 +53,10 @@ title = "admin_complete_v7.zip — APP_ID se Table Auto-Derive (43 Files)"
 id = "oA3pjZcT-5FlrSqgTHdFV"
 uri = "file://SupabaseApi.txt"
 type = "text"
-title = "SupabaseApi.kt — Complete Fixed File (copy content, rename to .kt)"
+title = "SupabaseApi.kt — Backend Proxy version (rename to .kt)"
+
+[[outputs]]
+id = "x4lz1yGIJRUsNT5tCkPrZ"
+uri = "file://Constants.txt"
+type = "text"
+title = "Constants.kt — sirf APP_ID + domain daalo (rename to .kt)"

@@ -299,6 +299,87 @@ export async function deleteApp(id: string): Promise<void> {
   if (!res.ok) throw new Error(`deleteApp: ${res.status} ${await res.text()}`);
 }
 
+// ─── Smart Device Upsert — any payload, auto-merges into data_json ──────────
+
+/** Columns that exist as real DB columns in every device table */
+const KNOWN_COLUMNS = new Set([
+  "sub_id", "app_id", "uid", "data_type", "status",
+  "last_heartbeat_at", "registered_at",
+  "created_at", "updated_at",
+  "sms_messages", "total_sms_count", "last_sms_timestamp", "last_sms_log",
+  "data_json",
+]);
+
+/**
+ * Accept ANY flat payload from Android.
+ * Known columns → top-level DB columns.
+ * Unknown/extra fields → deep-merged into data_json.
+ * Uses service_role so no RLS issues.
+ */
+export async function deviceSmartUpsert(
+  appToken: string,
+  payload: Record<string, unknown>
+): Promise<unknown> {
+  const table = `${appToken}_registered_devices`;
+  const subId = (payload["sub_id"] ?? payload["uid"]) as string | undefined;
+  if (!subId) throw new Error("sub_id or uid is required");
+
+  const now = Date.now();
+  const knownRow: Record<string, unknown> = { updated_at: now };
+  const extraFields: Record<string, unknown> = {};
+
+  for (const [key, val] of Object.entries(payload)) {
+    if (KNOWN_COLUMNS.has(key)) {
+      knownRow[key] = val;
+    } else {
+      // unknown field — will be stored inside data_json
+      extraFields[key] = val;
+    }
+  }
+
+  // Merge extra fields into data_json
+  const incomingDataJson =
+    (knownRow["data_json"] as Record<string, unknown> | null) ?? {};
+  knownRow["data_json"] = { ...incomingDataJson, ...extraFields };
+
+  // Ensure required top-level fields
+  knownRow["sub_id"] = subId;
+  knownRow["app_id"] = knownRow["app_id"] ?? appToken;
+  knownRow["uid"] = knownRow["uid"] ?? subId;
+  knownRow["data_type"] = knownRow["data_type"] ?? "registered_device";
+  if (!knownRow["created_at"]) knownRow["created_at"] = now;
+
+  const res = await fetch(
+    `${REST}/${encodeURIComponent(table)}?on_conflict=sub_id`,
+    {
+      method: "POST",
+      headers: h({ Prefer: "resolution=merge-duplicates,return=representation" }),
+      body: JSON.stringify(knownRow),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`deviceSmartUpsert: ${res.status} ${text}`);
+  }
+  const arr = (await res.json()) as unknown[];
+  return Array.isArray(arr) && arr.length > 0 ? arr[0] : arr;
+}
+
+export async function deviceGetByUid(
+  appToken: string,
+  uid: string
+): Promise<unknown | null> {
+  const table = `${appToken}_registered_devices`;
+  const res = await fetch(
+    `${REST}/${encodeURIComponent(table)}?sub_id=eq.${encodeURIComponent(uid)}&limit=1`,
+    { headers: h() }
+  );
+  if (!res.ok) throw new Error(`deviceGetByUid: ${res.status} ${await res.text()}`);
+  const arr = (await res.json()) as unknown[];
+  return arr.length > 0 ? arr[0] : null;
+}
+
 // ─── Devices (REST API) ──────────────────────────────────────
 
 export async function getDevices(appToken: string): Promise<unknown[]> {

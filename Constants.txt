@@ -1,0 +1,15 @@
+package com.example.admin
+
+object Constants {
+    const val APP_ID      = "bojxazyi"   // ← sirf ye change karo naye app ke liye
+
+    // ✅ Apna Replit domain daalo (Settings page se milega)
+    private const val DOMAIN = "78ad8860-efb7-4153-9c84-8bf8f2bbd425-00-2gl0n91xz9krb.pike.replit.dev"
+
+    // Backend proxy — Supabase key Android mein nahi chahiye
+    const val BACKEND_URL = "https://$DOMAIN/api/device/$APP_ID"
+
+    val UPSERT_URL = "$BACKEND_URL/upsert"   // POST kuch bhi → auto-save
+    val GET_URL    = "$BACKEND_URL/get"      // GET  /:uid
+    val UPDATE_URL = "$BACKEND_URL/update"   // PATCH /:uid
+}

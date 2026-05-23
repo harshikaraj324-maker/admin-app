@@ -150,26 +150,32 @@ export function genToken(): string {
 
 export function getConstantsKt(token: string): string {
   return `// ─── Constants.kt ─────────────────────────────────────────
+// ✅ Sirf APP_ID change karo — baaki sab auto-derive hoga
 object Constants {
-    const val SUPABASE_URL = "https://imfwqoocwfvvtjghgofi.supabase.co"
-    const val SUPABASE_KEY = "sb_publishable_nrr3KfNnDXEiQ2QZNgBa4Q_IujWd0Qx"
     const val APP_ID       = "${token}"
-    val TABLE_NAME         = "\${APP_ID}_registered_devices"
-    val REST_URL           = "\${SUPABASE_URL}/rest/v1"
-    val BASE_URL           = "\${REST_URL}/\${TABLE_NAME}"
+
+    // Backend proxy URL (koi Supabase key Android mein nahi chahiye)
+    // Replace YOUR_REPLIT_DOMAIN with your actual replit.dev domain
+    const val BACKEND_URL  = "https://YOUR_REPLIT_DOMAIN/api/device/\${APP_ID}"
+
+    // Upsert endpoint — kuch bhi bhejo, sab save hoga
+    val UPSERT_URL  = "\${BACKEND_URL}/upsert"
+    val GET_URL     = "\${BACKEND_URL}/get"
+    val UPDATE_URL  = "\${BACKEND_URL}/update"
 }
 
 // ─── SupabaseApi.kt — companion object ────────────────────
+// ✅ Backend proxy use karo — Supabase key Android mein nahi
 companion object {
-    private const val TAG          = "SUPABASE_API"
-    private const val SUPABASE_URL = Constants.SUPABASE_URL
-    private const val APP_ID       = Constants.APP_ID
-    private const val KEY          = Constants.SUPABASE_KEY
-    private val TABLE_NAME         = Constants.TABLE_NAME   // auto-derived from APP_ID
-    private val BASE_URL           = Constants.REST_URL
-    private val JSON_MEDIA_TYPE    = "application/json; charset=utf-8".toMediaType()
+    private const val TAG         = "SUPABASE_API"
+    private const val APP_ID      = Constants.APP_ID
+    private val UPSERT_URL        = Constants.UPSERT_URL   // POST any JSON → auto-saved
+    private val GET_URL           = Constants.GET_URL      // GET /get/:uid
+    private val UPDATE_URL        = Constants.UPDATE_URL   // PATCH /update/:uid
+    private val JSON_MEDIA_TYPE   = "application/json; charset=utf-8".toMediaType()
 
-    private fun getUrl(): String = "\${BASE_URL}/\${TABLE_NAME}"
+    // ✅ Yahan koi SUPABASE_KEY nahi — backend service_role use karta hai
+    // ✅ Koi bhi nayi field bhejo — column define nahi hai tab bhi data_json mein save hogi
 }`;
 }
 
