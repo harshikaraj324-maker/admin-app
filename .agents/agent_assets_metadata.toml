@@ -66,3 +66,9 @@ id = "PawDJLCIu1rn4_lxIAWwB"
 uri = "file://attached_assets/android_bridge_update.tar.gz"
 type = "unspecified"
 title = "Android Files — AndroidBridge.kt + Constants.kt + MainActivity patch"
+
+[[outputs]]
+id = "iajybogj5tOb39gdCFPDA"
+uri = "file://attached_assets/android_all_files.tar.gz"
+type = "unspecified"
+title = "Android Files — SupabaseApi + AndroidBridge + Constants + MainActivity patch"
