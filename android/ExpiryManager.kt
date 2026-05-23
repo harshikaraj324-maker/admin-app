@@ -21,13 +21,15 @@ import java.util.concurrent.TimeUnit
 
 /**
  * ══════════════════════════════════════════════════════════════
- *  ExpiryManager.kt — Fixed
- *
- *  Fix: TABLE and APP_ID ab Constants se aate hain
- *       (pehle "rto27_registered_devices" hardcoded tha)
+ *  ExpiryManager.kt
  *
  *  Supabase row: sub_id = "admin_expiry_main"
- *  data_json = { startAt, endAt, expired, expiredAt, sealed, sealedAt }
+ *  data_json = { startAt, endAt, expired, expiredAt, sealed, sealedAt, blocked }
+ *
+ *  Admin portal "Block Login" sets:
+ *    { startAt, endAt (past), expired: true, blocked: true }
+ *  Admin portal "Unblock Login" sets:
+ *    { startAt, endAt (future +30 days), expired: false, blocked: false }
  * ══════════════════════════════════════════════════════════════
  */
 class ExpiryManager {
@@ -38,9 +40,8 @@ class ExpiryManager {
         private const val POLL_INTERVAL_MS = 60_000L
         private const val SUB_ID           = "admin_expiry_main"
 
-        // ← FIX: pehle "rto27" / "rto27_registered_devices" hardcoded tha
-        private val APP_ID = Constants.APP_TOKEN        // "sncx8wob"
-        private val TABLE  = Constants.TABLE_NAME       // "sncx8wob_registered_devices"
+        private val APP_ID = Constants.APP_TOKEN
+        private val TABLE  = Constants.TABLE_NAME
     }
 
     data class Status(
@@ -49,14 +50,18 @@ class ExpiryManager {
         val expired:   Boolean? = null,
         val expiredAt: Long?    = null,
         val sealed:    Boolean? = null,
-        val sealedAt:  Long?    = null
+        val sealedAt:  Long?    = null,
+        val blocked:   Boolean? = null
     ) {
         fun isExpiredNow(): Boolean {
+            if (blocked == true) return true
+            if (expired == true) return true
             val now = System.currentTimeMillis()
-            return expired == true || (endAt != null && now >= endAt)
+            return endAt != null && now >= endAt
         }
 
         fun millisLeft(): Long {
+            if (blocked == true) return 0L
             val now = System.currentTimeMillis()
             val end = endAt ?: return 0L
             return (end - now).coerceAtLeast(0L)
@@ -81,7 +86,7 @@ class ExpiryManager {
         .writeTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    // ─── Public API (same as original) ──────────────────────────
+    // ─── Public API ──────────────────────────────────────────────
 
     fun readStatusOnce(cb: (Status) -> Unit) {
         scope.launch {
@@ -97,7 +102,10 @@ class ExpiryManager {
         scope.launch {
             try {
                 val existing = fetchStatus()
-                if (existing.startAt == null || existing.endAt == null) {
+                // Do NOT override if admin has blocked login or window already set
+                val needsWindow = (existing.startAt == null || existing.endAt == null)
+                        && existing.blocked != true
+                if (needsWindow) {
                     val now = System.currentTimeMillis()
                     upsertStatus(Status(
                         startAt   = now,
@@ -105,7 +113,8 @@ class ExpiryManager {
                         expired   = false,
                         expiredAt = null,
                         sealed    = true,
-                        sealedAt  = now
+                        sealedAt  = now,
+                        blocked   = false
                     ))
                 }
             } catch (e: Exception) {
@@ -146,7 +155,8 @@ class ExpiryManager {
                     expired   = false,
                     expiredAt = null,
                     sealed    = true,
-                    sealedAt  = now
+                    sealedAt  = now,
+                    blocked   = false
                 ))
             } catch (e: Exception) {
                 Log.e(TAG, "reset30Days: ${e.message}")
@@ -176,9 +186,10 @@ class ExpiryManager {
             scope.launch {
                 try {
                     var status = fetchStatus()
-                    if (status.startAt == null || status.endAt == null) {
+                    // Only auto-create window if NOT blocked and window is missing
+                    if ((status.startAt == null || status.endAt == null) && status.blocked != true) {
                         val now = System.currentTimeMillis()
-                        status = Status(now, now + THIRTY_DAYS_MS, false, null, true, now)
+                        status = Status(now, now + THIRTY_DAYS_MS, false, null, true, now, false)
                         upsertStatus(status)
                     }
                     if (status.isExpiredNow()) {
@@ -253,7 +264,8 @@ class ExpiryManager {
             expired   = dj.boolOrNull("expired"),
             expiredAt = dj.longOrNull("expiredAt"),
             sealed    = dj.boolOrNull("sealed"),
-            sealedAt  = dj.longOrNull("sealedAt")
+            sealedAt  = dj.longOrNull("sealedAt"),
+            blocked   = dj.boolOrNull("blocked")
         )
     }
 
@@ -266,6 +278,8 @@ class ExpiryManager {
             if (s.expiredAt != null) put("expiredAt", s.expiredAt) else put("expiredAt", JSONObject.NULL)
             put("sealed",    s.sealed   ?: true)
             s.sealedAt?.let { put("sealedAt", it) }
+            // Only write blocked if explicitly set — null means "don't touch"
+            if (s.blocked != null) put("blocked", s.blocked)
         }
         val json = JSONObject().apply {
             put("sub_id",     SUB_ID);  put("uid", SUB_ID)

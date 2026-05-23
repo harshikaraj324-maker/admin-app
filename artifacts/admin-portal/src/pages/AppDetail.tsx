@@ -103,7 +103,16 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     if (!confirm("Block admin login? The app will show 'Access expired'.")) return;
     setBlockBusy(true);
     try {
-      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", { end_at: Date.now() - 1000, blocked: true, blocked_at: Date.now() });
+      const now = Date.now();
+      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", {
+        startAt: now - 1000,
+        endAt: now - 1000,
+        expired: true,
+        expiredAt: now,
+        sealed: true,
+        sealedAt: now,
+        blocked: true,
+      });
       showMsg(true, "Login blocked. Admin app will be denied access.");
       void load();
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Failed"); }
@@ -113,7 +122,16 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   const handleUnblock = async () => {
     setBlockBusy(true);
     try {
-      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", { end_at: Date.now() + 30 * 24 * 60 * 60 * 1000, blocked: false, unblocked_at: Date.now() });
+      const now = Date.now();
+      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", {
+        startAt: now,
+        endAt: now + 30 * 24 * 60 * 60 * 1000,
+        expired: false,
+        expiredAt: null,
+        sealed: true,
+        sealedAt: now,
+        blocked: false,
+      });
       showMsg(true, "Login unblocked — access restored for 30 days.");
       void load();
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Failed"); }
@@ -138,7 +156,8 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
 
   const expiryRaw = expiryEntry?.data_json as unknown as Record<string, unknown> | undefined;
   const isBlocked = expiryRaw?.blocked === true ||
-    (typeof expiryRaw?.end_at === "number" && (expiryRaw.end_at as number) < Date.now());
+    expiryRaw?.expired === true ||
+    (typeof expiryRaw?.endAt === "number" && (expiryRaw.endAt as number) < Date.now());
 
   const passRaw = passwordEntry?.data_json as unknown as Record<string, unknown> | undefined;
   const passValue = passRaw
