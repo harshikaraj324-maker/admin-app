@@ -61,6 +61,7 @@ class DeviceActivity : AppCompatActivity() {
     private lateinit var socketStatusDot:  View
     private lateinit var socketStatusText: TextView
     private lateinit var socketConnectBtn: TextView
+    private lateinit var socketRefreshBtn: TextView
 
     private lateinit var totalCount: TextView
     private lateinit var last15MinSeen: TextView
@@ -354,6 +355,7 @@ class DeviceActivity : AppCompatActivity() {
         socketStatusDot  = findViewById(R.id.socketStatusDot)
         socketStatusText = findViewById(R.id.socketStatusText)
         socketConnectBtn = findViewById(R.id.socketConnectBtn)
+        socketRefreshBtn = findViewById(R.id.socketRefreshBtn)
 
         totalCount          = findViewById(R.id.totalCount)
         last15MinSeen       = findViewById(R.id.last15MinSeen)
@@ -416,6 +418,14 @@ class DeviceActivity : AppCompatActivity() {
                 socketStatusText.text = "Socket: Connecting..."
                 socketStatusText.setTextColor(Color.parseColor("#FF9800"))
             }
+        }
+
+        // ── Refresh icon — always forces a reconnect regardless of current state
+        socketRefreshBtn.setOnClickListener {
+            isManuallyDisconnected = false
+            socketStatusText.text = "Socket: Connecting..."
+            socketStatusText.setTextColor(Color.parseColor("#FF9800"))
+            realtimeManager.reconnect()
         }
 
         setupSearch()

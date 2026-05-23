@@ -64,6 +64,18 @@
                 android:paddingTop="6dp"
                 android:paddingBottom="6dp" />
 
+            <TextView
+                android:id="@+id/socketRefreshBtn"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:text="⟳"
+                android:textSize="22sp"
+                android:textColor="#0E5271"
+                android:gravity="center"
+                android:layout_marginStart="8dp"
+                android:background="@drawable/box_border_bg"
+                android:padding="4dp" />
+
         </LinearLayout>
 
         <View
