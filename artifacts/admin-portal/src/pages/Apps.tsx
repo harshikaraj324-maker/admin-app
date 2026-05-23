@@ -275,9 +275,12 @@ export default function Apps() {
               return (
                 <div key={app.id} className="bg-[#0d1220] border border-slate-800/80 rounded-2xl overflow-hidden">
                   {/* Main row — clickable to open AppDetail */}
-                  <button
+                  <div
                     onClick={() => setSelectedApp(app)}
-                    className="w-full flex items-center gap-3 px-3 sm:px-4 py-3 hover:bg-slate-800/30 transition-colors text-left"
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === "Enter" && setSelectedApp(app)}
+                    className="w-full flex items-center gap-3 px-3 sm:px-4 py-3 hover:bg-slate-800/30 transition-colors cursor-pointer"
                   >
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${app.is_active ? "bg-emerald-400 shadow-[0_0_6px_#34d399]" : "bg-slate-600"}`} />
                     <div className="flex-1 min-w-0">

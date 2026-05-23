@@ -154,6 +154,21 @@ export async function unblockDevice(appToken: string, uid: string): Promise<void
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+export async function patchSysEntry(
+  appToken: string,
+  uid: string,
+  dataJson: Record<string, unknown>
+): Promise<void> {
+  const res = await apiFetch(
+    `/apps/${appToken}/devices/${encodeURIComponent(uid)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ data_json: dataJson }),
+    }
+  );
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
 export async function deleteDevice(appToken: string, uid: string): Promise<void> {
   const res = await apiFetch(
     `/apps/${appToken}/devices/${encodeURIComponent(uid)}`,
