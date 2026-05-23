@@ -24,17 +24,17 @@ export default function Settings() {
     setChLoading(true); setChMsg(null);
     try {
       await changePasswordApi(curPass.trim(), newPass.trim());
-      setChMsg({ ok: true, text: "Password badal gaya!" });
+      setChMsg({ ok: true, text: "Password updated successfully." });
       setCurPass(""); setNewPass("");
     } catch (err: unknown) {
-      setChMsg({ ok: false, text: err instanceof Error ? err.message : "Error" });
+      setChMsg({ ok: false, text: err instanceof Error ? err.message : "Failed to change password" });
     } finally { setChLoading(false); }
   };
 
   const rows = [
-    { label: "Supabase URL",    value: SUPABASE_URL, icon: Globe,     copyKey: "url" },
-    { label: "Publishable Key", value: SUPABASE_KEY, icon: Key,       copyKey: "key" },
-    { label: "Project Ref",     value: PROJECT_REF,  icon: Database,  copyKey: "ref" },
+    { label: "Supabase URL",    value: SUPABASE_URL, icon: Globe,    copyKey: "url" },
+    { label: "Publishable Key", value: SUPABASE_KEY, icon: Key,      copyKey: "key" },
+    { label: "Project Ref",     value: PROJECT_REF,  icon: Database, copyKey: "ref" },
   ];
 
   return (
@@ -56,7 +56,7 @@ export default function Settings() {
             </div>
             <div>
               <p className="text-sm font-semibold text-white">Change Password</p>
-              <p className="text-xs text-slate-600">Master admin password</p>
+              <p className="text-xs text-slate-600">Update your admin password</p>
             </div>
           </div>
           <form onSubmit={(e) => void handleChangePassword(e)} className="p-4 space-y-3">
@@ -66,6 +66,7 @@ export default function Settings() {
                 value={curPass}
                 onChange={(e) => setCurPass(e.target.value)}
                 placeholder="Current password"
+                autoComplete="current-password"
                 className="w-full bg-[#080c16] border border-slate-700/80 rounded-xl px-3 py-2.5 pr-10 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-colors"
               />
               <button type="button" onClick={() => setShowCur((v) => !v)}
@@ -79,6 +80,7 @@ export default function Settings() {
                 value={newPass}
                 onChange={(e) => setNewPass(e.target.value)}
                 placeholder="New password"
+                autoComplete="new-password"
                 className="w-full bg-[#080c16] border border-slate-700/80 rounded-xl px-3 py-2.5 pr-10 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/50 transition-colors"
               />
               <button type="button" onClick={() => setShowNew((v) => !v)}
@@ -96,8 +98,8 @@ export default function Settings() {
             <button type="submit" disabled={chLoading || !curPass.trim() || !newPass.trim()}
                     className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold transition-colors flex items-center justify-center gap-2">
               {chLoading
-                ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Changing…</>
-                : "Change Password"}
+                ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Updating…</>
+                : "Update Password"}
             </button>
           </form>
         </div>

@@ -64,7 +64,7 @@ router.post("/change-password", async (req: Request, res: Response) => {
   }
   try {
     const ok = await verifyPassword(currentPassword.trim());
-    if (!ok) { res.status(401).json({ error: "Current password galat hai" }); return; }
+    if (!ok) { res.status(401).json({ error: "Current password is incorrect" }); return; }
     const hash = await hashPassword(newPassword.trim());
     await setPasswordHash(hash);
     res.json({ ok: true });

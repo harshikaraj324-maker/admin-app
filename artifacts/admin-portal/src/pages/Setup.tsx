@@ -11,7 +11,7 @@ export default function Setup({ onDone }: SetupProps) {
   const [msg, setMsg] = useState("");
 
   const run = async () => {
-    if (!pat.trim()) { setMsg("PAT daalo pehle"); return; }
+    if (!pat.trim()) { setMsg("Please enter your Supabase PAT"); return; }
     setStep("running"); setMsg("");
     try {
       await runSetup(pat.trim());
@@ -27,7 +27,6 @@ export default function Setup({ onDone }: SetupProps) {
   return (
     <div className="min-h-screen bg-[#080c16] flex items-center justify-center p-6">
       <div className="w-full max-w-md">
-        {/* Icon */}
         <div className="text-center mb-8">
           <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5 transition-all ${
             step === "done" ? "bg-emerald-600/20 border border-emerald-500/30" : "bg-blue-600/20 border border-blue-500/30"
@@ -36,14 +35,13 @@ export default function Setup({ onDone }: SetupProps) {
               ? <CheckCircle className="w-8 h-8 text-emerald-400" />
               : <Shield className="w-8 h-8 text-blue-400" />}
           </div>
-          <h1 className="text-xl font-bold text-white mb-2">Pehli Baar Setup</h1>
+          <h1 className="text-xl font-bold text-white mb-2">Initial Setup</h1>
           <p className="text-slate-500 text-sm leading-relaxed">
-            Ek baar Supabase PAT dena hoga — tables auto-create ho jaayengi.<br />
-            Baad mein apps create karne ke liye bhi yahi use hoga.
+            Enter your Supabase PAT once — tables will be created automatically.<br />
+            This token will also be used when creating new apps.
           </p>
         </div>
 
-        {/* PAT input */}
         <div className="bg-[#0d1220] border border-slate-800 rounded-2xl p-5 mb-4 space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -56,7 +54,7 @@ export default function Setup({ onDone }: SetupProps) {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
               >
-                Token banao <ExternalLink className="w-3 h-3" />
+                Generate token <ExternalLink className="w-3 h-3" />
               </a>
             </div>
             <div className="relative">
@@ -64,8 +62,9 @@ export default function Setup({ onDone }: SetupProps) {
                 type={showPat ? "text" : "password"}
                 value={pat}
                 onChange={(e) => setPat(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && run()}
+                onKeyDown={(e) => e.key === "Enter" && void run()}
                 placeholder="sbp_xxxxxxxxxxxxxxxxxxxx"
+                autoComplete="off"
                 className="w-full bg-[#0a0e1a] border border-slate-700/80 rounded-xl px-4 py-3 pr-10 text-sm font-mono placeholder-slate-700 focus:outline-none focus:border-blue-500/60 transition-colors text-white"
               />
               <button
@@ -81,13 +80,12 @@ export default function Setup({ onDone }: SetupProps) {
             </p>
           </div>
 
-          {/* What it does */}
           <div className="pt-1 border-t border-slate-800/60 space-y-2">
             {[
-              "admin_tokens table create hogi",
-              "Device tables auto-create function setup hogi",
-              "RLS policies set honge (service_role access)",
-              "Token sirf is device ke localStorage mein save hoga",
+              "Creates admin_tokens table",
+              "Sets up device table auto-create function",
+              "Configures RLS policies (service_role access)",
+              "Token is saved only in this browser's local storage",
             ].map((txt, i) => (
               <div key={i} className="flex items-center gap-2.5">
                 <div className="w-4 h-4 rounded-full bg-blue-600/20 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
@@ -99,7 +97,6 @@ export default function Setup({ onDone }: SetupProps) {
           </div>
         </div>
 
-        {/* Error */}
         {step === "error" && msg && (
           <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 mb-4">
             <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
@@ -107,35 +104,33 @@ export default function Setup({ onDone }: SetupProps) {
           </div>
         )}
 
-        {/* Done */}
         {step === "done" && (
           <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 mb-4">
             <CheckCircle className="w-4 h-4 text-emerald-400" />
-            <p className="text-sm text-emerald-400 font-medium">Setup complete! Dashboard khul raha hai…</p>
+            <p className="text-sm text-emerald-400 font-medium">Setup complete! Loading dashboard…</p>
           </div>
         )}
 
-        {/* Button */}
         <button
-          onClick={run}
+          onClick={() => void run()}
           disabled={step === "running" || step === "done" || !pat.trim()}
           className="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-sm transition-colors flex items-center justify-center gap-2"
         >
           {step === "running" ? (
             <>
               <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Tables ban rahi hain…
+              Setting up…
             </>
           ) : step === "done" ? (
             <><CheckCircle className="w-4 h-4" />Done!</>
           ) : (
-            "Initialize Karo →"
+            "Initialize →"
           )}
         </button>
 
         {step === "error" && (
-          <button onClick={run} className="w-full mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-            Dobara try karo
+          <button onClick={() => void run()} className="w-full mt-3 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+            Try again
           </button>
         )}
       </div>

@@ -26,7 +26,7 @@ export default function Login({ onLogin }: LoginProps) {
       saveSessionToken(token);
       onLogin();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Error");
+      setError(err instanceof Error ? err.message : "Login failed");
     } finally { setLoading(false); }
   };
 
@@ -35,7 +35,6 @@ export default function Login({ onLogin }: LoginProps) {
   return (
     <div className="min-h-screen bg-[#080c16] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="flex flex-col items-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center mb-3 shadow-lg shadow-blue-900/40">
             <Lock className="w-6 h-6 text-white" />
@@ -45,8 +44,8 @@ export default function Login({ onLogin }: LoginProps) {
             {passwordSet === null
               ? "Connecting…"
               : isFirstTime
-              ? "Pehli baar — apna password set karo"
-              : "Master Admin Login"}
+              ? "First time — set your admin password"
+              : "Sign in to continue"}
           </p>
         </div>
 
@@ -61,8 +60,9 @@ export default function Login({ onLogin }: LoginProps) {
                 type={showPass ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder={isFirstTime ? "Naya password daalo" : "Password"}
+                placeholder={isFirstTime ? "Create a password" : "Password"}
                 autoFocus
+                autoComplete={isFirstTime ? "new-password" : "current-password"}
                 className="w-full bg-[#0d1220] border border-slate-700/80 rounded-xl px-4 py-3 pr-10 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 transition-colors"
               />
               <button type="button" onClick={() => setShowPass((v) => !v)}
@@ -81,12 +81,12 @@ export default function Login({ onLogin }: LoginProps) {
                     className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-semibold transition-colors flex items-center justify-center gap-2">
               {loading
                 ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Please wait…</>
-                : isFirstTime ? "Password Set Karo" : "Login"}
+                : isFirstTime ? "Set Password" : "Sign In"}
             </button>
 
             {isFirstTime && (
               <p className="text-[11px] text-slate-600 text-center">
-                Ye password aage login ke liye use hoga
+                This password will be used for all future logins
               </p>
             )}
           </form>

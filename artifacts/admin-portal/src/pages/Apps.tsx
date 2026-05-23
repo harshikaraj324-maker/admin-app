@@ -42,10 +42,7 @@ export default function Apps() {
   useEffect(() => {
     void load();
     fetchServerPat().then((pat) => {
-      if (pat) {
-        savePat(pat);
-        setFPat(pat);
-      }
+      if (pat) { savePat(pat); setFPat(pat); }
     });
   }, [load]);
 
@@ -74,8 +71,8 @@ export default function Apps() {
     const raw = fToken.trim();
     const tok = raw.toLowerCase().replace(/[^a-z0-9_]/g, "").replace(/^_+|_+$/g, "");
     if (!tok) return;
-    if (!fPat.trim()) { setCreateErr("PAT required — neeche field mein daalo"); return; }
-    setCreating(true); setCreateErr(""); setCreateMsg("Supabase mein table ban rahi hai…");
+    if (!fPat.trim()) { setCreateErr("Supabase PAT is required"); return; }
+    setCreating(true); setCreateErr(""); setCreateMsg("Creating table in Supabase…");
     try {
       savePat(fPat.trim());
       const a = await createApp(tok, fLabel.trim() || raw, fPat.trim());
@@ -95,7 +92,7 @@ export default function Apps() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Ye app delete karo? Device data table bhi hatao Supabase se manually.")) return;
+    if (!confirm("Delete this app? You will need to remove the device table from Supabase manually.")) return;
     try { await deleteApp(id); setApps((p) => p.filter((a) => a.id !== id)); }
     catch (e: unknown) { alert(e instanceof Error ? e.message : "Error"); }
   };
@@ -106,7 +103,7 @@ export default function Apps() {
     try {
       await fixRealtime(app.token, rtPat.trim());
       setRtPatId(null); setRtPat("");
-      setRtMsg({ id: app.id, ok: true, text: "✓ Realtime enabled! Live data ab kaam karega." });
+      setRtMsg({ id: app.id, ok: true, text: "Realtime enabled! Live data is now active." });
     } catch (e: unknown) {
       setRtMsg({ id: app.id, ok: false, text: e instanceof Error ? e.message : "Fix failed" });
     } finally {
@@ -150,7 +147,7 @@ export default function Apps() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="App ID ya naam se search karo…"
+              placeholder="Search by App ID or name…"
               className="w-full bg-[#0d1220] border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-sm placeholder-slate-700 focus:outline-none focus:border-blue-500/50 text-white transition-colors"
             />
             {search && (
@@ -166,7 +163,7 @@ export default function Apps() {
         {showForm && (
           <div className="bg-[#0d1220] border border-blue-500/25 rounded-2xl p-4 sm:p-5 shadow-xl shadow-blue-900/10">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-white">Naya App Banao</h2>
+              <h2 className="text-sm font-semibold text-white">Create New App</h2>
               <button onClick={() => setShowForm(false)}
                       className="p-1 rounded-lg hover:bg-slate-800 text-slate-500 transition-colors">
                 <X className="w-4 h-4" />
@@ -177,7 +174,7 @@ export default function Apps() {
               <div>
                 <label className="text-xs text-slate-500 mb-1.5 block font-medium">App Name (optional)</label>
                 <input value={fLabel} onChange={(e) => setFLabel(e.target.value)}
-                       placeholder="e.g. RTO App Delhi"
+                       placeholder="e.g. Main App"
                        className="w-full bg-[#0a0e1a] border border-slate-700/80 rounded-xl px-3 py-2.5 text-sm placeholder-slate-700 focus:outline-none focus:border-blue-500/60 transition-colors text-white" />
               </div>
               <div>
@@ -206,13 +203,14 @@ export default function Apps() {
               <label className="text-xs text-slate-500 mb-1.5 flex items-center gap-1.5 font-medium">
                 <Key className="w-3 h-3" />
                 Supabase PAT
-                {fPat && <span className="text-emerald-500 text-[10px]">✓ auto-loaded</span>}
+                {fPat && <span className="text-emerald-500 text-[10px]">✓ loaded</span>}
               </label>
               <input
                 type="password"
                 value={fPat}
                 onChange={(e) => setFPat(e.target.value)}
                 placeholder="sbp_xxxxxxxxxxxx"
+                autoComplete="off"
                 className="w-full bg-[#0a0e1a] border border-slate-700/80 rounded-xl px-3 py-2.5 text-sm font-mono placeholder-slate-700 focus:outline-none focus:border-blue-500/60 transition-colors text-white"
               />
             </div>
@@ -253,18 +251,18 @@ export default function Apps() {
         {loading && apps.length === 0 ? (
           <div className="flex items-center justify-center py-20 text-slate-600">
             <span className="w-4 h-4 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin mr-2" />
-            <span className="text-sm">Load ho raha hai…</span>
+            <span className="text-sm">Loading…</span>
           </div>
         ) : filtered.length === 0 && search ? (
           <div className="text-center py-12 bg-[#0d1220] border border-slate-800 rounded-2xl">
             <Search className="w-7 h-7 mx-auto text-slate-700 mb-2" />
-            <p className="text-sm text-slate-600">"{search}" se koi app nahi mila</p>
+            <p className="text-sm text-slate-600">No results for "{search}"</p>
             <button onClick={() => setSearch("")} className="text-xs text-blue-500 hover:text-blue-400 mt-1">Clear search</button>
           </div>
         ) : apps.length === 0 ? (
           <div className="text-center py-16 bg-[#0d1220] border border-slate-800 rounded-2xl">
             <Smartphone className="w-8 h-8 mx-auto text-slate-700 mb-3" />
-            <p className="text-sm text-slate-600">Koi app nahi. "New App" dabao.</p>
+            <p className="text-sm text-slate-600">No apps yet. Click "New App" to get started.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -327,8 +325,8 @@ export default function Apps() {
                   {rtPatId === app.id && (
                     <div className="mx-3 sm:mx-4 mb-3 border border-violet-800/40 rounded-xl bg-violet-950/20 px-3 py-3">
                       <p className="text-xs text-violet-300 mb-2 font-medium">
-                        Supabase PAT chahiye —{" "}
-                        <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noreferrer" className="underline opacity-70 hover:opacity-100">yahan banao</a>
+                        Supabase PAT required —{" "}
+                        <a href="https://supabase.com/dashboard/account/tokens" target="_blank" rel="noreferrer" className="underline opacity-70 hover:opacity-100">generate here</a>
                       </p>
                       <div className="flex gap-2">
                         <input
@@ -337,6 +335,7 @@ export default function Apps() {
                           onChange={(e) => setRtPat(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && void handleFixRealtime(app)}
                           placeholder="sbp_..."
+                          autoComplete="off"
                           className="flex-1 bg-[#0d1220] border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-violet-600"
                           autoFocus
                         />
