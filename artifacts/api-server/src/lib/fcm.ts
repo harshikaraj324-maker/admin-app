@@ -40,6 +40,11 @@ function getApp(): App {
     throw new Error("FIREBASE_SERVICE_JSON is not valid JSON");
   }
 
+  // Fix: Replit Secrets mein \n double-escape ho jaata hai (\\n → actual \n)
+  if (typeof sa["private_key"] === "string") {
+    sa["private_key"] = (sa["private_key"] as string).replace(/\\n/g, "\n");
+  }
+
   const existing = getApps().find((a) => a.name === "admin-fcm");
   if (existing) {
     _app = existing;
