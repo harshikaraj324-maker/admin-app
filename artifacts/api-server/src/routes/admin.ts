@@ -15,6 +15,12 @@ import {
 
 const router: IRouter = Router();
 
+// ─── PAT (auto-fill from env) ─────────────────────────────
+router.get("/pat", (_req: Request, res: Response) => {
+  const pat = process.env["SUPABASE_PAT"]?.trim() ?? "";
+  res.json({ pat });
+});
+
 // ─── Setup ────────────────────────────────────────────────
 
 router.get("/setup/status", async (_req: Request, res: Response) => {
@@ -64,9 +70,9 @@ router.post("/apps", async (req: Request, res: Response) => {
     res.status(400).json({ error: "Supabase PAT required to create device table" });
     return;
   }
-  const clean = token.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const clean = token.trim().toLowerCase().replace(/[^a-z0-9_]/g, "").replace(/^_+|_+$/g, "");
   if (!clean) {
-    res.status(400).json({ error: "invalid token: only a-z0-9 allowed" });
+    res.status(400).json({ error: "invalid token: only a-z0-9_ allowed" });
     return;
   }
   try {

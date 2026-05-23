@@ -176,11 +176,32 @@ export function calcStats(devices: Device[]): AppStats {
 
 // ─── Helpers ──────────────────────────────────────────────
 
+const CODE_WORDS = [
+  "alpha", "bravo", "cobra", "delta", "eagle", "falcon", "ghost", "hawk",
+  "iron", "jaguar", "kilo", "lima", "mango", "nova", "omega", "phantom",
+  "ranger", "sigma", "titan", "ultra", "viper", "wolf", "xray", "yankee",
+  "zeus", "blade", "cyber", "dark", "fire", "frost", "neon", "nexus",
+  "pulse", "raven", "shadow", "sky", "solar", "star", "storm", "swift",
+];
+
 export function genToken(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  return Array.from({ length: 8 }, () =>
+  const word = CODE_WORDS[Math.floor(Math.random() * CODE_WORDS.length)]!;
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const suffix = Array.from({ length: 7 }, () =>
     chars[Math.floor(Math.random() * chars.length)]
   ).join("");
+  return `${word.toUpperCase()}-${suffix}`;
+}
+
+export async function fetchServerPat(): Promise<string> {
+  try {
+    const res = await fetch("/api/admin/pat");
+    if (!res.ok) return "";
+    const data = (await res.json()) as { pat?: string };
+    return data.pat ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export function getConstantsKt(token: string): string {
