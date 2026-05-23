@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft, RefreshCw, ShieldOff, ShieldCheck, Trash2,
-  Smartphone, Wifi, WifiOff, MessageSquare, CreditCard, Search, Filter
+  Smartphone, Wifi, WifiOff, MessageSquare, CreditCard, Search, Filter, Wrench
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import StatCard from "@/components/StatCard";
@@ -22,6 +22,37 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterType>("all");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [fixing, setFixing] = useState(false);
+  const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleFixTable = async () => {
+    const pat = localStorage.getItem("supabase_pat") ?? "";
+    if (!pat) {
+      const entered = window.prompt("Supabase PAT enter karo (fix ke liye zaroori hai):");
+      if (!entered?.trim()) return;
+      localStorage.setItem("supabase_pat", entered.trim());
+    }
+    const finalPat = localStorage.getItem("supabase_pat") ?? "";
+    setFixing(true); setFixMsg(null);
+    try {
+      const res = await fetch(`/api/admin/apps/${app.token}/fix-table`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pat: finalPat }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (res.ok && data.ok) {
+        setFixMsg({ ok: true, text: "Table fix ho gayi! Columns + anon policies add ho gaye." });
+        await load();
+      } else {
+        setFixMsg({ ok: false, text: data.error ?? "Fix failed" });
+      }
+    } catch (e: unknown) {
+      setFixMsg({ ok: false, text: e instanceof Error ? e.message : "Error" });
+    } finally {
+      setFixing(false);
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -99,11 +130,30 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
           </div>
           <p className="text-xs text-slate-600 font-mono">{app.token}_registered_devices</p>
         </div>
+        <button onClick={handleFixTable} disabled={fixing}
+                title="Fix Table — missing columns aur anon RLS policies add karo"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-900/25 hover:bg-amber-900/40 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50">
+          {fixing
+            ? <span className="w-3 h-3 border border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+            : <Wrench className="w-3 h-3" />}
+          Fix Table
+        </button>
         <button onClick={load} disabled={loading}
                 className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors disabled:opacity-50">
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
+
+      {/* Fix result banner */}
+      {fixMsg && (
+        <div className={`mx-6 mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between ${
+          fixMsg.ok ? "bg-emerald-900/20 text-emerald-400 border border-emerald-800/40"
+                    : "bg-red-900/20 text-red-400 border border-red-800/40"
+        }`}>
+          <span>{fixMsg.text}</span>
+          <button onClick={() => setFixMsg(null)} className="ml-3 opacity-60 hover:opacity-100 text-base leading-none">×</button>
+        </div>
+      )}
 
       <div className="p-6 space-y-5">
         {loading && devices.length === 0 ? (

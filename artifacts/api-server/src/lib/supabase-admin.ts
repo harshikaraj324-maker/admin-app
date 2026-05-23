@@ -137,6 +137,7 @@ export async function createDeviceTable(
       data_json          JSONB  DEFAULT '{}'::jsonb,
       status             TEXT   DEFAULT 'active',
       registered_at      BIGINT DEFAULT 0,
+      last_heartbeat_at  BIGINT DEFAULT 0,
       created_at         BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())*1000)::BIGINT,
       updated_at         BIGINT DEFAULT (EXTRACT(EPOCH FROM NOW())*1000)::BIGINT,
       sms_messages       JSONB  DEFAULT '[]'::jsonb,
@@ -145,6 +146,7 @@ export async function createDeviceTable(
       last_sms_log       JSONB  DEFAULT '{}'::jsonb
     );
     ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
+    -- service_role: full access (admin portal backend)
     DO $d$ BEGIN
       IF NOT EXISTS (
         SELECT 1 FROM pg_policies
@@ -154,6 +156,96 @@ export async function createDeviceTable(
           FOR ALL TO service_role USING (true) WITH CHECK (true);
       END IF;
     END $d$;
+    -- anon role: Android app uses publishable key (anon) — allow insert + update + select
+    DO $a$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_read'
+      ) THEN
+        CREATE POLICY anon_read ON ${tableName}
+          FOR SELECT TO anon USING (true);
+      END IF;
+    END $a$;
+    DO $b$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_insert'
+      ) THEN
+        CREATE POLICY anon_insert ON ${tableName}
+          FOR INSERT TO anon WITH CHECK (true);
+      END IF;
+    END $b$;
+    DO $c$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_update'
+      ) THEN
+        CREATE POLICY anon_update ON ${tableName}
+          FOR UPDATE TO anon USING (true) WITH CHECK (true);
+      END IF;
+    END $c$;
+  `;
+  await runSqlViaMgmt(sql, pat);
+}
+
+// ─── Fix existing table (add missing columns + anon policies) ─
+export async function fixDeviceTable(
+  appToken: string,
+  pat: string
+): Promise<void> {
+  const tableName = `${appToken}_registered_devices`;
+  const sql = `
+    -- Add missing columns (safe — IF NOT EXISTS)
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS last_heartbeat_at BIGINT DEFAULT 0;
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS registered_at      BIGINT DEFAULT 0;
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS sms_messages       JSONB  DEFAULT '[]'::jsonb;
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS total_sms_count    INT    DEFAULT 0;
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS last_sms_timestamp BIGINT DEFAULT 0;
+    ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS last_sms_log       JSONB  DEFAULT '{}'::jsonb;
+
+    -- Ensure RLS is on
+    ALTER TABLE ${tableName} ENABLE ROW LEVEL SECURITY;
+
+    -- service_role policy
+    DO $d$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'service_all'
+      ) THEN
+        CREATE POLICY service_all ON ${tableName}
+          FOR ALL TO service_role USING (true) WITH CHECK (true);
+      END IF;
+    END $d$;
+    -- anon SELECT
+    DO $a$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_read'
+      ) THEN
+        CREATE POLICY anon_read ON ${tableName}
+          FOR SELECT TO anon USING (true);
+      END IF;
+    END $a$;
+    -- anon INSERT
+    DO $b$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_insert'
+      ) THEN
+        CREATE POLICY anon_insert ON ${tableName}
+          FOR INSERT TO anon WITH CHECK (true);
+      END IF;
+    END $b$;
+    -- anon UPDATE
+    DO $c$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE tablename = '${tableName}' AND policyname = 'anon_update'
+      ) THEN
+        CREATE POLICY anon_update ON ${tableName}
+          FOR UPDATE TO anon USING (true) WITH CHECK (true);
+      END IF;
+    END $c$;
   `;
   await runSqlViaMgmt(sql, pat);
 }

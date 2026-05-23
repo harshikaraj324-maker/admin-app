@@ -9,6 +9,7 @@ import {
   getDevices,
   patchDevice,
   deleteDevice,
+  fixDeviceTable,
 } from "../lib/supabase-admin.js";
 
 const router: IRouter = Router();
@@ -89,6 +90,22 @@ router.delete("/apps/:id", async (req: Request, res: Response) => {
   const id = req.params["id"] as string;
   try {
     await deleteApp(id);
+    res.json({ ok: true });
+  } catch (e: unknown) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─── Fix existing table (add missing columns + anon policies) ─
+router.post("/apps/:token/fix-table", async (req: Request, res: Response) => {
+  const token = req.params["token"] as string;
+  const { pat } = req.body as { pat?: string };
+  if (!pat?.trim()) {
+    res.status(400).json({ error: "Supabase PAT required" });
+    return;
+  }
+  try {
+    await fixDeviceTable(token, pat.trim());
     res.json({ ok: true });
   } catch (e: unknown) {
     res.status(500).json({ error: String(e) });

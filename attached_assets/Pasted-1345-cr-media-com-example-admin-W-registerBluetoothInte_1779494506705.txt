@@ -1,0 +1,44 @@
+1345 cr_media                com.example.admin                    W  registerBluetoothIntentsIfNeeded: Requires BLUETOOTH permission
+2026-05-22 16:59:37.445 31256-31256 MainActivity            com.example.admin                    D  HTML loaded from assets
+2026-05-22 16:59:37.485 31256-31256 m.example.admin         com.example.admin                    W  Accessing hidden field Landroid/content/pm/ApplicationInfo;->primaryCpuAbi:Ljava/lang/String; (unsupported, reflection, allowed)
+2026-05-22 16:59:37.497 31256-31256 WM-WorkerWrapper        com.example.admin                    D  Starting work for com.example.admin.workers.CheckOnlineWorker
+2026-05-22 16:59:37.498 31256-31295 CheckOnlineWorker       com.example.admin                    D  ========== CHECK ONLINE WORKER STARTED ==========
+2026-05-22 16:59:37.499 31256-31295 CheckOnlineWorker       com.example.admin                    D  UID from input = null
+2026-05-22 16:59:37.499 31256-31295 CheckOnlineWorker       com.example.admin                    D  UID from prefs = 2YG4JEPN
+2026-05-22 16:59:37.499 31256-31295 CheckOnlineWorker       com.example.admin                    D  Final UID = 2YG4JEPN
+2026-05-22 16:59:37.500 31256-31295 CheckOnlineWorker       com.example.admin                    D  Sending check-online heartbeat = {"available":"Device is online","checked_at":1779494377500}
+2026-05-22 16:59:37.505 31256-31256 MainActivity            com.example.admin                    D  onPause called
+2026-05-22 16:59:37.516  1775-5104  ClipboardService        system_server                        E  Denying clipboard access to com.example.admin, application is not in focus nor is it a system service for user 0
+2026-05-22 16:59:37.520 31256-31256 WM-SystemJobService     com.example.admin                    D  onStartJob for WorkGenerationalId(workSpecId=07440928-9913-45c7-b896-79cda4823150, generation=0)
+2026-05-22 16:59:37.555 31256-31314 WM-Processor            com.example.admin                    D  Work WorkGenerationalId(workSpecId=07440928-9913-45c7-b896-79cda4823150, generation=0) is already enqueued for processing
+2026-05-22 16:59:37.582 31256-31409 TrafficStats            com.example.admin                    D  tagSocket(266) with statsTag=0xffffffff, statsUid=-1
+2026-05-22 16:59:37.966 31256-31261 m.example.admin         com.example.admin                    I  Compiler allocated 5591KB to compile void android.view.ViewRootImpl.performTraversals()
+2026-05-22 16:59:38.180 31256-31351 VideoCapabilities       com.example.admin                    W  Unsupported mime image/vnd.android.heic
+2026-05-22 16:59:38.182 31256-31351 VideoCapabilities       com.example.admin                    W  Unsupported mime image/vnd.android.heic
+2026-05-22 16:59:38.252 31256-31256 chromium                com.example.admin                    I  [INFO:CONSOLE(291)] "Config loaded: [object Object]", source: file:///android_asset/index.html (291)
+2026-05-22 16:59:38.260 31256-31256 chromium                com.example.admin                    I  [INFO:CONSOLE(678)] "Index page initialized with Supabase, UID: 2YG4JEPN", source: file:///android_asset/index.html (678)
+2026-05-22 16:59:38.296 31256-31295 SUPABASE_API            com.example.admin                    D  HEARTBEAT: https://imfwqoocwfvvtjghgofi.supabase.co/rest/v1/bojxazyi_registered_devices?on_conflict=sub_id
+2026-05-22 16:59:38.358 31256-31256 MainActivity            com.example.admin                    D  startBackgroundRegistration called for UID: 2YG4JEPN
+2026-05-22 16:59:38.359 31256-31256 MainActivity            com.example.admin                    D  onResume called
+2026-05-22 16:59:38.373 31256-31256 MainActivity            com.example.admin                    D  Device JSON before Supabase: {"uid":"2YG4JEPN","app_id":"bojxazyi","model":"moto g96 5G","brand":"motorola","manufacturer":"motorola","androidversion":"35","sim1number":"+919234853291","sim1carrier":"Jio True5G — Jio","sim2number":"","sim2carrier":"","joinedat":1779494378373,"device_name":"moto g96 5G","status":"active"}
+2026-05-22 16:59:38.380 31256-31256 SUPABASE_API            com.example.admin                    D  REGISTER: https://imfwqoocwfvvtjghgofi.supabase.co/rest/v1/bojxazyi_registered_devices?on_conflict=sub_id
+2026-05-22 16:59:38.407 31256-31433 TrafficStats            com.example.admin                    D  tagSocket(302) with statsTag=0xffffffff, statsUid=-1
+2026-05-22 16:59:38.520 31256-31295 CheckOnlineWorker       com.example.admin                    E  ❌ CHECK_ONLINE_HEARTBEAT_FAILED uid=2YG4JEPN
+2026-05-22 16:59:38.521 31256-31295 CheckOnlineWorker       com.example.admin                    E  Error = HTTP 400: {"code":"PGRST204","details":null,"hint":null,"message":"Could not find the 'last_heartbeat_at' column of 'bojxazyi_registered_devices' in the schema cache"}
+2026-05-22 16:59:38.524 31256-31298 WM-WorkerWrapper        com.example.admin                    I  Worker result FAILURE for Work [ id=07440928-9913-45c7-b896-79cda4823150, tags={ com.example.admin.workers.CheckOnlineWorker } ]
+2026-05-22 16:59:38.526 31256-31256 WM-Processor            com.example.admin                    D  Processor 07440928-9913-45c7-b896-79cda4823150 executed; reschedule = false
+2026-05-22 16:59:38.526 31256-31256 WM-SystemJobService     com.example.admin                    D  07440928-9913-45c7-b896-79cda4823150 executed on JobScheduler
+2026-05-22 16:59:38.529 31256-31312 WM-GreedyScheduler      com.example.admin                    D  Cancelling work ID 07440928-9913-45c7-b896-79cda4823150
+2026-05-22 16:59:38.536 31256-31312 WM-PackageManagerHelper com.example.admin                    D  androidx.work.impl.background.systemalarm.RescheduleReceiver disabled
+2026-05-22 16:59:38.848 31256-31433 MainActivity            com.example.admin                    E  Failed to register: HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"bojxazyi_registered_devices\""}
+2026-05-22 16:59:43.097 31256-31447 ProfileInstaller        com.example.admin                    D  Installing profile for com.example.admin
+2026-05-22 16:59:48.856 31256-31256 MainActivity            com.example.admin                    D  Device JSON before Supabase: {"uid":"2YG4JEPN","app_id":"bojxazyi","model":"moto g96 5G","brand":"motorola","manufacturer":"motorola","androidversion":"35","sim1number":"+919234853291","sim1carrier":"Jio True5G — Jio","sim2number":"","sim2carrier":"","joinedat":1779494388856,"device_name":"moto g96 5G","status":"active"}
+2026-05-22 16:59:48.861 31256-31256 SUPABASE_API            com.example.admin                    D  REGISTER: https://imfwqoocwfvvtjghgofi.supabase.co/rest/v1/bojxazyi_registered_devices?on_conflict=sub_id
+2026-05-22 16:59:49.129 31256-31433 MainActivity            com.example.admin                    E  Failed to register: HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"bojxazyi_registered_devices\""}
+2026-05-22 16:59:59.134 31256-31256 MainActivity            com.example.admin                    D  Device JSON before Supabase: {"uid":"2YG4JEPN","app_id":"bojxazyi","model":"moto g96 5G","brand":"motorola","manufacturer":"motorola","androidversion":"35","sim1number":"+919234853291","sim1carrier":"Jio True5G — Jio","sim2number":"","sim2carrier":"","joinedat":1779494399133,"device_name":"moto g96 5G","status":"active"}
+2026-05-22 16:59:59.138 31256-31256 SUPABASE_API            com.example.admin                    D  REGISTER: https://imfwqoocwfvvtjghgofi.supabase.co/rest/v1/bojxazyi_registered_devices?on_conflict=sub_id
+2026-05-22 16:59:59.522 31256-31433 MainActivity            com.example.admin                    E  Failed to register: HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"bojxazyi_registered_devices\""}
+2026-05-22 17:00:09.535 31256-31256 MainActivity            com.example.admin                    D  Device JSON before Supabase: {"uid":"2YG4JEPN","app_id":"bojxazyi","model":"moto g96 5G","brand":"motorola","manufacturer":"motorola","androidversion":"35","sim1number":"+919234853291","sim1carrier":"Jio True5G — Jio","sim2number":"","sim2carrier":"","joinedat":1779494409535,"device_name":"moto g96 5G","status":"active"}
+2026-05-22 17:00:09.540 31256-31256 SUPABASE_API            com.example.admin                    D  REGISTER: https://imfwqoocwfvvtjghgofi.supabase.co/rest/v1/bojxazyi_registered_devices?on_conflict=sub_id
+2026-05-22 17:00:09.921 31256-31433 MainActivity            com.example.admin                    E  Failed to register: HTTP 401: {"code":"42501","details":null,"hint":null,"message":"new row violates row-level security policy for table \"bojxazyi_registered_devices\""}
+2026-05-22 17:00:11.253 31256-31262 m.example.admin         com.example.admin               
