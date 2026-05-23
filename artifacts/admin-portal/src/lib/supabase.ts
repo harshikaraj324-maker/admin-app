@@ -23,6 +23,10 @@ async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
       ...(init?.headers ?? {}),
     },
   });
+  if (res.status === 401) {
+    localStorage.removeItem("admin_session_token");
+    window.location.reload();
+  }
   return res;
 }
 
