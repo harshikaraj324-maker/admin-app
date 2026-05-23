@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft, RefreshCw, ShieldOff, ShieldCheck, Trash2,
-  Smartphone, Wifi, WifiOff, MessageSquare, CreditCard, Search, Filter, Wrench
+  Smartphone, Wifi, WifiOff, Search, Filter, Wrench, Radio
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import StatCard from "@/components/StatCard";
@@ -15,6 +15,15 @@ interface AppDetailProps {
 
 type FilterType = "all" | "active" | "blocked" | "online";
 
+// Merge a single updated device into the list
+function mergeDevice(list: Device[], updated: Device): Device[] {
+  const idx = list.findIndex((d) => d.sub_id === updated.sub_id);
+  if (idx === -1) return [updated, ...list];
+  const next = [...list];
+  next[idx] = { ...list[idx], ...updated };
+  return next;
+}
+
 export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,11 +33,79 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [fixing, setFixing] = useState(false);
   const [fixMsg, setFixMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
+  // ── REST load ──────────────────────────────────────────
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setDevices(await getDevices(app.token)); }
+    catch (e: unknown) { setError(e instanceof Error ? e.message : "Error"); }
+    finally { setLoading(false); }
+  }, [app.token]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  // ── WebSocket live updates ─────────────────────────────
+  useEffect(() => {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${proto}//${window.location.host}/api/device/${app.token}/ws`;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => setWsConnected(true);
+      ws.onclose = () => {
+        setWsConnected(false);
+        // Auto-reconnect after 4s
+        reconnectTimer = setTimeout(connect, 4000);
+      };
+      ws.onerror = () => ws.close();
+
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data as string) as {
+            event: string;
+            data: unknown;
+          };
+          if (
+            msg.event === "device:updated" ||
+            msg.event === "device:form_data"
+          ) {
+            const d = msg.data as Device;
+            if (d?.sub_id) setDevices((prev) => mergeDevice(prev, d));
+          } else if (msg.event === "device:deleted") {
+            const uid = (msg.data as { sub_id?: string })?.sub_id;
+            if (uid) setDevices((prev) => prev.filter((x) => x.sub_id !== uid));
+          } else if (msg.event === "device:blocked") {
+            const d = msg.data as Device;
+            if (d?.sub_id)
+              setDevices((prev) =>
+                prev.map((x) =>
+                  x.sub_id === d.sub_id ? { ...x, status: d.status } : x
+                )
+              );
+          }
+        } catch { /* noop */ }
+      };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, [app.token]);
+
+  // ── Fix Table ──────────────────────────────────────────
   const handleFixTable = async () => {
     const pat = localStorage.getItem("supabase_pat") ?? "";
     if (!pat) {
-      const entered = window.prompt("Supabase PAT enter karo (fix ke liye zaroori hai):");
+      const entered = window.prompt("Supabase PAT enter karo:");
       if (!entered?.trim()) return;
       localStorage.setItem("supabase_pat", entered.trim());
     }
@@ -42,7 +119,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
       });
       const data = (await res.json()) as { ok?: boolean; error?: string };
       if (res.ok && data.ok) {
-        setFixMsg({ ok: true, text: "Table fix ho gayi! Columns + anon policies add ho gaye." });
+        setFixMsg({ ok: true, text: "Table fix ho gayi!" });
         await load();
       } else {
         setFixMsg({ ok: false, text: data.error ?? "Fix failed" });
@@ -54,24 +131,18 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     }
   };
 
-  const load = useCallback(async () => {
-    setLoading(true); setError("");
-    try { setDevices(await getDevices(app.token)); }
-    catch (e: unknown) { setError(e instanceof Error ? e.message : "Error"); }
-    finally { setLoading(false); }
-  }, [app.token]);
-
-  useEffect(() => { load(); }, [load]);
-
+  // ── Block / Unblock / Delete ───────────────────────────
   const handleBlock = async (d: Device) => {
     setBusyId(d.sub_id);
     try {
       if (d.status === "blocked") {
         await unblockDevice(app.token, d.sub_id);
         setDevices((p) => p.map((x) => x.sub_id === d.sub_id ? { ...x, status: "active" } : x));
+        broadcast(app.token, "device:blocked", { ...d, status: "active" });
       } else {
         await blockDevice(app.token, d.sub_id);
         setDevices((p) => p.map((x) => x.sub_id === d.sub_id ? { ...x, status: "blocked" } : x));
+        broadcast(app.token, "device:blocked", { ...d, status: "blocked" });
       }
     } catch (e: unknown) { alert(e instanceof Error ? e.message : "Error"); }
     finally { setBusyId(null); }
@@ -87,56 +158,75 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     finally { setBusyId(null); }
   };
 
+  // ── Helpers ────────────────────────────────────────────
   const now = Date.now();
   const isOnline = (d: Device) => {
     const t = d.data_json?.online_checked_at ?? 0;
     return t > 0 && now - t < 15 * 60 * 1000;
   };
 
+  const fmt = (ts?: number) => {
+    if (!ts || ts === 0) return "—";
+    return new Date(ts).toLocaleString("en-IN", {
+      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  };
+
+  // Broadcast helper — for block/unblock (informational, no backend call)
+  function broadcast(_token: string, _event: string, _data: unknown) {
+    // WS broadcast happens server-side automatically after upsert.
+    // This is just for immediate local-state consistency.
+  }
+
   const filtered = devices.filter((d) => {
     const q = search.toLowerCase();
-    const matchSearch = !q || [
-      d.sub_id, d.data_json?.device_name, d.data_json?.model,
-      d.data_json?.brand, d.data_json?.sim1number, d.data_json?.sim2number,
-    ].some((v) => v?.toLowerCase().includes(q));
+    const matchSearch =
+      !q ||
+      [d.sub_id, d.data_json?.device_name, d.data_json?.model,
+       d.data_json?.brand, d.data_json?.sim1number, d.data_json?.sim2number]
+        .some((v) => v?.toLowerCase().includes(q));
 
     const matchFilter =
-      filter === "all" ? true :
-      filter === "active" ? d.status === "active" :
+      filter === "all"     ? true :
+      filter === "active"  ? d.status === "active" :
       filter === "blocked" ? d.status === "blocked" :
-      filter === "online" ? isOnline(d) : true;
+      filter === "online"  ? isOnline(d) : true;
 
     return matchSearch && matchFilter;
   });
 
   const stats = calcStats(devices);
 
-  const fmt = (ts?: number) => {
-    if (!ts || ts === 0) return "—";
-    return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-  };
-
   return (
     <div className="flex-1 overflow-auto bg-[#080c16]">
       {/* Top bar */}
       <div className="sticky top-0 z-10 bg-[#080c16]/90 backdrop-blur border-b border-slate-800/60 h-14 flex items-center gap-3 px-6">
-        <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors">
+        <button onClick={onBack}
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors">
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="text-sm font-semibold text-white truncate">{app.label || app.token}</h1>
             <Badge variant={app.is_active ? "active" : "inactive"} />
+            {/* Live indicator */}
+            <span className={`flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${
+              wsConnected
+                ? "bg-emerald-900/30 text-emerald-400"
+                : "bg-slate-800 text-slate-600"
+            }`}>
+              <Radio className={`w-2.5 h-2.5 ${wsConnected ? "animate-pulse" : ""}`} />
+              {wsConnected ? "Live" : "Offline"}
+            </span>
           </div>
-          <p className="text-xs text-slate-600 font-mono">{app.token}_registered_devices</p>
         </div>
         <button onClick={handleFixTable} disabled={fixing}
-                title="Fix Table — missing columns aur anon RLS policies add karo"
+                title="Fix Table"
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-900/25 hover:bg-amber-900/40 text-amber-400 text-xs font-medium transition-colors disabled:opacity-50">
           {fixing
             ? <span className="w-3 h-3 border border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
             : <Wrench className="w-3 h-3" />}
-          Fix Table
+          Fix
         </button>
         <button onClick={load} disabled={loading}
                 className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-white transition-colors disabled:opacity-50">
@@ -144,22 +234,21 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
         </button>
       </div>
 
-      {/* Fix result banner */}
       {fixMsg && (
         <div className={`mx-6 mt-3 px-4 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between ${
           fixMsg.ok ? "bg-emerald-900/20 text-emerald-400 border border-emerald-800/40"
                     : "bg-red-900/20 text-red-400 border border-red-800/40"
         }`}>
           <span>{fixMsg.text}</span>
-          <button onClick={() => setFixMsg(null)} className="ml-3 opacity-60 hover:opacity-100 text-base leading-none">×</button>
+          <button onClick={() => setFixMsg(null)} className="ml-3 opacity-60 hover:opacity-100">×</button>
         </div>
       )}
 
-      <div className="p-6 space-y-5">
+      <div className="p-6 space-y-4">
         {loading && devices.length === 0 ? (
           <div className="flex items-center justify-center py-24 text-slate-600">
             <span className="w-5 h-5 border-2 border-slate-700 border-t-blue-500 rounded-full animate-spin mr-2" />
-            <span className="text-sm">Devices load ho rahe hain…</span>
+            <span className="text-sm">Loading…</span>
           </div>
         ) : error ? (
           <div className="text-center py-16 bg-[#0d1220] border border-slate-800 rounded-2xl">
@@ -168,12 +257,11 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
           </div>
         ) : (
           <>
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <StatCard label="Total Devices" value={stats.total} icon={Smartphone} color="blue" />
-              <StatCard label="Online Now" value={stats.online} icon={Wifi} color="green" />
-              <StatCard label="Blocked" value={stats.blocked} icon={ShieldOff} color="red" />
-              <StatCard label="SMS Count" value={stats.smsTotal} icon={MessageSquare} color="amber" />
+            {/* Stats — only Total + Online + Blocked */}
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard label="Total Devices" value={stats.total}   icon={Smartphone} color="blue"  />
+              <StatCard label="Online Now"    value={stats.online}  icon={Wifi}        color="green" />
+              <StatCard label="Blocked"       value={stats.blocked} icon={WifiOff}     color="red"   />
             </div>
 
             {/* Search + Filter */}
@@ -181,7 +269,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
               <div className="flex-1 relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
                 <input value={search} onChange={(e) => setSearch(e.target.value)}
-                       placeholder="Search by UID, device name, SIM number…"
+                       placeholder="Search UID, device, SIM…"
                        className="w-full bg-[#0d1220] border border-slate-800 rounded-xl pl-9 pr-4 py-2.5 text-sm placeholder-slate-700 text-white focus:outline-none focus:border-blue-500/50 transition-colors" />
               </div>
               <div className="flex items-center gap-1 bg-[#0d1220] border border-slate-800 rounded-xl px-1.5 py-1.5">
@@ -195,14 +283,13 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
               </div>
             </div>
 
-            {/* Device count */}
-            <p className="text-xs text-slate-600">{filtered.length} devices shown</p>
+            <p className="text-xs text-slate-600">{filtered.length} devices</p>
 
             {/* Device list */}
             {filtered.length === 0 ? (
               <div className="text-center py-16 bg-[#0d1220] border border-slate-800 rounded-2xl">
                 <Smartphone className="w-7 h-7 mx-auto text-slate-700 mb-3" />
-                <p className="text-sm text-slate-600">Koi device nahi mili.</p>
+                <p className="text-sm text-slate-600">No devices found.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -210,84 +297,65 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
                   const dj = d.data_json ?? {};
                   const online = isOnline(d);
                   const busy = busyId === d.sub_id;
+                  const deviceLabel = dj.device_name || dj.model || dj.brand || null;
+                  const simInfo = dj.sim1number
+                    ? `${dj.sim1number}${dj.sim1carrier ? ` · ${dj.sim1carrier}` : ""}`
+                    : null;
+
                   return (
                     <div key={d.sub_id}
-                         className={`bg-[#0d1220] border rounded-2xl p-4 transition-all ${
+                         className={`bg-[#0d1220] border rounded-2xl px-4 py-3 transition-all ${
                            d.status === "blocked"
                              ? "border-red-800/40 bg-red-900/5"
                              : "border-slate-800/80"
                          }`}>
-                      <div className="flex items-start gap-3">
-                        {/* Left icon */}
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                          d.status === "blocked" ? "bg-red-900/30" : online ? "bg-emerald-900/20" : "bg-slate-800"
+                      <div className="flex items-center gap-3">
+                        {/* Icon */}
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                          d.status === "blocked" ? "bg-red-900/30"
+                            : online ? "bg-emerald-900/20"
+                            : "bg-slate-800"
                         }`}>
                           <Smartphone className={`w-4 h-4 ${
-                            d.status === "blocked" ? "text-red-400" : online ? "text-emerald-400" : "text-slate-500"
+                            d.status === "blocked" ? "text-red-400"
+                              : online ? "text-emerald-400"
+                              : "text-slate-500"
                           }`} />
                         </div>
 
-                        {/* Info */}
+                        {/* Main info */}
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <p className="font-mono text-xs text-slate-300 font-semibold">{d.sub_id}</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-sm text-white font-semibold">{d.sub_id}</span>
                             <Badge variant={d.status === "blocked" ? "blocked" : "active"} />
                             <Badge variant={online ? "online" : (dj.online_status === "offline" ? "offline" : "unknown")} pulse={online} />
                           </div>
-
-                          {/* Device info grid */}
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">Device</p>
-                              <p className="text-xs text-slate-300 truncate">{dj.device_name || dj.model || "—"}</p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">Android</p>
-                              <p className="text-xs text-slate-300">{dj.androidversion || "—"}</p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2 sm:col-span-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5 flex items-center gap-1"><CreditCard className="w-2.5 h-2.5" />SIM</p>
-                              <p className="text-xs text-slate-300 font-mono">
-                                {dj.sim1number ? `${dj.sim1number} (${dj.sim1carrier || "?"})` : "—"}
-                                {dj.sim2number ? ` · ${dj.sim2number}` : ""}
-                              </p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">SMS Count</p>
-                              <p className="text-xs text-slate-300">{d.total_sms_count ?? 0}</p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">FCM</p>
-                              <p className={`text-xs ${dj.fcm_token_status === "active" ? "text-emerald-400" : "text-slate-600"}`}>
-                                {dj.fcm_token_status || "—"}
-                              </p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">Registered</p>
-                              <p className="text-xs text-slate-400">{fmt(d.registered_at || (d.created_at))}</p>
-                            </div>
-                            <div className="bg-[#080c16] rounded-lg px-2.5 py-2">
-                              <p className="text-[10px] text-slate-600 mb-0.5">Last Seen</p>
-                              <p className="text-xs text-slate-400">{fmt(dj.last_seen_at)}</p>
-                            </div>
+                          <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 flex-wrap">
+                            {deviceLabel && <span>{deviceLabel}</span>}
+                            {simInfo && <span className="font-mono">{simInfo}</span>}
+                            <span>Joined {fmt(d.registered_at ?? d.created_at)}</span>
+                            {dj.last_seen_at ? <span>· Seen {fmt(dj.last_seen_at)}</span> : null}
                           </div>
                         </div>
 
                         {/* Actions */}
-                        <div className="flex flex-col gap-1.5 flex-shrink-0">
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
                           <button onClick={() => handleBlock(d)} disabled={busy}
                                   title={d.status === "blocked" ? "Unblock" : "Block"}
-                                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-50 ${
                                     d.status === "blocked"
                                       ? "bg-emerald-900/25 text-emerald-400 hover:bg-emerald-900/40"
                                       : "bg-red-900/20 text-red-400 hover:bg-red-900/35"
                                   }`}>
-                            {busy ? <span className="w-3 h-3 border border-current/30 border-t-current rounded-full animate-spin" />
-                                   : d.status === "blocked" ? <ShieldCheck className="w-3 h-3" /> : <ShieldOff className="w-3 h-3" />}
+                            {busy
+                              ? <span className="w-3 h-3 border border-current/30 border-t-current rounded-full animate-spin" />
+                              : d.status === "blocked"
+                                ? <ShieldCheck className="w-3 h-3" />
+                                : <ShieldOff className="w-3 h-3" />}
                             {d.status === "blocked" ? "Unblock" : "Block"}
                           </button>
                           <button onClick={() => handleDelete(d.sub_id)} disabled={busy}
-                                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-red-900/25 text-slate-600 hover:text-red-400 text-xs transition-colors disabled:opacity-50">
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-red-900/25 text-slate-600 hover:text-red-400 text-xs transition-colors disabled:opacity-50">
                             <Trash2 className="w-3 h-3" />Delete
                           </button>
                         </div>

@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { deviceSmartUpsert, deviceGetByUid } from "../lib/supabase-admin.js";
+import { broadcast } from "../lib/ws-manager.js";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,8 @@ router.post("/:appToken/upsert", async (req: Request, res: Response) => {
 
   try {
     const result = await deviceSmartUpsert(appToken, payload);
+    // Broadcast real-time update to all WS subscribers of this app
+    broadcast(appToken, "device:updated", result);
     res.json({ ok: true, data: result });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
@@ -82,6 +85,7 @@ router.patch("/:appToken/update/:uid", async (req: Request, res: Response) => {
   try {
     const payload = { ...patch, sub_id: uid, uid };
     const result = await deviceSmartUpsert(appToken, payload);
+    broadcast(appToken, "device:updated", result);
     res.json({ ok: true, data: result });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
@@ -121,15 +125,13 @@ router.post("/:appToken/data", async (req: Request, res: Response) => {
     const payload: Record<string, unknown> = {
       sub_id: uid,
       uid,
-      // Flatten form fields directly into device row — smart upsert will
-      // keep known columns as columns and move unknown ones to data_json
       ...body.data,
-      // also nest under form_data key for clean querying from admin
       form_data: body.data,
       last_heartbeat_at: Date.now(),
     };
 
     const result = await deviceSmartUpsert(appToken, payload);
+    broadcast(appToken, "device:form_data", result);
     res.json({ ok: true, data: result });
   } catch (e: unknown) {
     res.status(500).json({ ok: false, error: String(e) });
