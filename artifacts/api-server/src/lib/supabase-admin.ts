@@ -184,6 +184,23 @@ export async function createDeviceTable(
           FOR UPDATE TO anon USING (true) WITH CHECK (true);
       END IF;
     END $c$;
+
+    -- ── Supabase Realtime setup ──────────────────────────────────
+    -- REPLICA IDENTITY FULL: DELETE events will carry ALL columns
+    -- (DEFAULT = only PK, so sub_id would be missing in delete events)
+    ALTER TABLE ${tableName} REPLICA IDENTITY FULL;
+
+    -- Add to supabase_realtime publication so WebSocket events fire
+    DO $rt$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = '${tableName}'
+      ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE ${tableName};
+      END IF;
+    END $rt$;
   `;
   await runSqlViaMgmt(sql, pat);
 }
@@ -246,6 +263,23 @@ export async function fixDeviceTable(
           FOR UPDATE TO anon USING (true) WITH CHECK (true);
       END IF;
     END $c$;
+
+    -- ── Supabase Realtime setup ──────────────────────────────────
+    -- REPLICA IDENTITY FULL: DELETE events will carry ALL columns
+    -- (DEFAULT = only PK, so sub_id would be missing in delete events)
+    ALTER TABLE ${tableName} REPLICA IDENTITY FULL;
+
+    -- Add to supabase_realtime publication so WebSocket events fire
+    DO $rt$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+          AND schemaname = 'public'
+          AND tablename = '${tableName}'
+      ) THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE ${tableName};
+      END IF;
+    END $rt$;
   `;
   await runSqlViaMgmt(sql, pat);
 }
