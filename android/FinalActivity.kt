@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import com.example.admin.R
 import com.example.admin.network.SupabaseApi
 import com.example.admin.network.SmsMessagesRealtimeClient
+import com.example.admin.network.SupabaseRealtimeManager
 import com.example.admin.services.FinalFetchService
 import com.example.admin.utils.FCMHelper
 import kotlinx.coroutines.CoroutineScope
@@ -100,9 +101,15 @@ class FinalActivity : AppCompatActivity() {
     private var checkStartedAt: Long = 0L
     private var checkSecond: Int = 0
 
+    // ── Live status tracking
+    // Updated by realtime listener + fetchOnlineStatus fallback.
+    // liveStatusRunnable reads this every 1 sec to keep UI current.
+    private var lastKnownCheckedAt: Long = 0L
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private val coroutineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var supabaseApi: SupabaseApi
+    private lateinit var deviceRealtimeManager: SupabaseRealtimeManager
     private var smsRealtimeClient: SmsMessagesRealtimeClient? = null
 
     private var deviceInfoJob: Job? = null
@@ -140,8 +147,10 @@ class FinalActivity : AppCompatActivity() {
             setupDownArrowToggle()
             startPeriodicDataFetching()
             startSmsRealtime()
+            startDeviceRealtime()
             startFinalFetchService()
             FCMHelper.initialize(this)
+            mainHandler.post(liveStatusRunnable)
 
             Log.d(TAG, "Activity initialized for uid=$uniqueid")
         } catch (e: Exception) {
@@ -262,12 +271,13 @@ class FinalActivity : AppCompatActivity() {
             }
         }
 
+        // 30-sec fallback poll — realtime listener handles instant detection
         onlineStatusJob = coroutineScope.launch {
             while (isActive) {
                 if (!isOnlineCheckInProgress) {
                     fetchOnlineStatus()
                 }
-                delay(10000)
+                delay(30_000)
             }
         }
 
@@ -294,6 +304,42 @@ class FinalActivity : AppCompatActivity() {
             fetchCallHistory()
             fetchAdminConfig()
         }
+    }
+
+    // ── Realtime listener for THIS device's heartbeat / status updates.
+    // Instant detection — no Supabase polling during FCM check.
+    private fun startDeviceRealtime() {
+        deviceRealtimeManager = SupabaseRealtimeManager()
+        deviceRealtimeManager.startRegisteredDevicesRealtime(
+            scope = coroutineScope,
+            onInsertOrUpdate = { row ->
+                val uid = row.optString("sub_id", row.optString("uid", "")).trim()
+                if (uid != uniqueid) return@startRegisteredDevicesRealtime
+
+                val newStatus = supabaseApi.parseDeviceStatusRow(row) ?: return@startRegisteredDevicesRealtime
+                val newCheckedAt = newStatus.checkedAt
+                if (newCheckedAt <= 0L || newCheckedAt == lastKnownCheckedAt) return@startRegisteredDevicesRealtime
+
+                lastKnownCheckedAt = newCheckedAt
+                Log.d(TAG, "Realtime heartbeat uid=$uniqueid checkedAt=$newCheckedAt")
+
+                runOnUiThread {
+                    if (isOnlineCheckInProgress) {
+                        // FCM check is live — did device respond with a NEW heartbeat?
+                        val changed = newCheckedAt != oldOnlineCheckedAtBeforeCheck
+                        val fresh   = isFreshOnline(newCheckedAt, System.currentTimeMillis())
+                        if (changed && fresh) {
+                            finishOnlineCheckAsOnline(newCheckedAt)
+                        }
+                    }
+                    // liveStatusRunnable will render the updated UI on next 1-sec tick
+                }
+            },
+            onDelete   = { _ -> },
+            onError    = { e -> Log.e(TAG, "Device realtime error: ${e.message}") },
+            onConnected    = { Log.d(TAG, "Device realtime connected uid=$uniqueid") },
+            onDisconnected = { Log.w(TAG, "Device realtime disconnected uid=$uniqueid") }
+        )
     }
 
     private fun startSmsRealtime() {
@@ -395,35 +441,20 @@ class FinalActivity : AppCompatActivity() {
         }
     }
 
-    // ── FIX Bug 3: getLatestDeviceStatuses() → full /list call for all devices.
-    // Ab getDeviceOnlineStatus() use karo — direct Supabase REST, single device,
-    // no backend hop, much faster and more reliable.
+    // Fallback poll — realtime listener handles instant detection.
+    // Keeps lastKnownCheckedAt fresh in case realtime temporarily disconnects.
     private suspend fun fetchOnlineStatus() {
         try {
             val status = getCurrentDeviceStatus()
+            val fetched = status?.checkedAt ?: 0L
 
-            withContext(Dispatchers.Main) {
-                if (status == null) {
-                    setDeviceOfflineUi("Last checked: Never")
-                    return@withContext
-                }
-
-                val now = System.currentTimeMillis()
-                val checkedAt = status.checkedAt
-                val isOnline = isFreshOnline(checkedAt, now)
-
-                if (isOnline) {
-                    setDeviceOnlineUi(checkedAt)
-                } else {
-                    setDeviceOfflineUi(
-                        if (checkedAt > 0L) {
-                            "Last checked: ${getTimeAgo(checkedAt)}"
-                        } else {
-                            "Last checked: Never"
-                        }
-                    )
-                }
+            // Only advance — never go backwards
+            if (fetched > lastKnownCheckedAt) {
+                lastKnownCheckedAt = fetched
             }
+
+            // liveStatusRunnable renders the UI every 1 sec; we don't render here
+            // to avoid overwriting what the live ticker already shows.
         } catch (e: Exception) {
             Log.e(TAG, "fetchOnlineStatus exception", e)
         }
@@ -953,15 +984,15 @@ class FinalActivity : AppCompatActivity() {
         checkSecond = 0
 
         coroutineScope.launch {
-            // ── Capture current checkedAt BEFORE sending FCM, so we can detect
+            // Capture current checkedAt BEFORE sending FCM — realtime listener detects
             // any NEW update that arrives after the FCM was sent.
             val oldStatus = getCurrentDeviceStatus()
             oldOnlineCheckedAtBeforeCheck = oldStatus?.checkedAt ?: 0L
+            if (lastKnownCheckedAt <= 0L) lastKnownCheckedAt = oldOnlineCheckedAtBeforeCheck
 
-            setDeviceProcessingUi(0)
+            withContext(Dispatchers.Main) { setDeviceProcessingUi(0) }
 
             try {
-                // ── FIX Bug 3: getDeviceByUid() — single device, no full list fetch.
                 val device = supabaseApi.getDeviceByUid(uniqueid).getOrNull()
                 val fcmToken = device?.fcmToken.orEmpty()
 
@@ -976,12 +1007,12 @@ class FinalActivity : AppCompatActivity() {
                     fcmToken = fcmToken,
                     onResult = { success, message ->
                         runOnUiThread {
-                            if (success) {
-                                mainHandler.removeCallbacks(onlineCheckWatcherRunnable)
-                                mainHandler.post(onlineCheckWatcherRunnable)
-                            } else {
+                            if (!success) {
                                 finishOnlineCheckAsOffline(message ?: "FCM send failed")
                             }
+                            // On success: liveStatusRunnable counts 15-sec timeout;
+                            // startDeviceRealtime() fires finishOnlineCheckAsOnline()
+                            // the instant the device heartbeat arrives via WebSocket.
                         }
                     }
                 )
@@ -991,62 +1022,39 @@ class FinalActivity : AppCompatActivity() {
         }
     }
 
-    // ── FIX Bug 1, 2, 3 — onlineCheckWatcherRunnable:
+    // ── 1-second live UI ticker.
     //
-    // BUG was: `if (timestampFresh || (timestampChanged && timestampFresh))`
-    //   → simplifies to `if (timestampFresh)` — would show ONLINE immediately
-    //     if device was already online before check (stale timestamp), and would
-    //     never properly detect a newly-updated timestamp.
-    //
-    // FIX:
-    //   1. Require `timestampChanged` — device MUST have sent a NEW heartbeat
-    //      after the FCM was sent (not just a pre-existing fresh one).
-    //   2. ALSO check `timestampFresh` — the new heartbeat must be within 15 min.
-    //   3. Use `getDeviceOnlineStatus()` (direct single-device Supabase REST)
-    //      instead of getLatestDeviceStatuses() (backend /list all devices).
-    //      → Faster response detection (no backend hop).
-    private val onlineCheckWatcherRunnable: Runnable = object : Runnable {
+    // During FCM check: counts elapsed seconds, triggers 15-sec timeout.
+    // Idle: checks if lastKnownCheckedAt is still within 15 min → green/white card.
+    // Realtime listener calls finishOnlineCheckAsOnline() the instant a heartbeat
+    // arrives — no Supabase polling inside this runnable.
+    private val liveStatusRunnable: Runnable = object : Runnable {
         override fun run() {
             if (!isActivityAlive()) return
 
-            coroutineScope.launch {
-                val now = System.currentTimeMillis()
-                val elapsedMs = now - checkStartedAt
+            val now = System.currentTimeMillis()
+
+            if (isOnlineCheckInProgress) {
+                val elapsedMs  = now - checkStartedAt
                 val elapsedSec = (elapsedMs / 1000L).toInt().coerceIn(0, 15)
-
                 checkSecond = elapsedSec
-
-                withContext(Dispatchers.Main) {
-                    setDeviceProcessingUi(elapsedSec)
-                }
-
-                // Direct single-device fetch — no backend /list, no all-device scan.
-                val status = getCurrentDeviceStatus()
-                val newOnlineCheckedAt = status?.checkedAt ?: 0L
-
-                // Device MUST have updated its checkedAt after the FCM was sent.
-                val timestampChanged =
-                    newOnlineCheckedAt > 0L && newOnlineCheckedAt != oldOnlineCheckedAtBeforeCheck
-
-                // New checkedAt must also be within 15 min (device is actually online).
-                val timestampFresh = isFreshOnline(newOnlineCheckedAt, now)
-
-                if (timestampChanged && timestampFresh) {
-                    // Device responded with a brand-new heartbeat — ONLINE ✓
-                    finishOnlineCheckAsOnline(newOnlineCheckedAt)
-                    return@launch
-                }
+                setDeviceProcessingUi(elapsedSec)
 
                 if (elapsedMs >= CHECK_RESPONSE_TIMEOUT_MS) {
                     finishOnlineCheckAsOffline("No response in 15 sec")
-                    return@launch
+                    mainHandler.postDelayed(this, 1000L)
+                    return
                 }
-
-                mainHandler.postDelayed(
-                    this@FinalActivity.onlineCheckWatcherRunnable,
-                    CHECK_POLL_INTERVAL_MS
-                )
+            } else {
+                val cached = lastKnownCheckedAt
+                when {
+                    cached <= 0L -> { /* not yet fetched — keep whatever is shown */ }
+                    isFreshOnline(cached, now) -> setDeviceOnlineUi(cached)
+                    else -> setDeviceOfflineUi("Last seen: ${getTimeAgo(cached)}")
+                }
             }
+
+            mainHandler.postDelayed(this, 1000L)
         }
     }
 
@@ -1643,6 +1651,11 @@ class FinalActivity : AppCompatActivity() {
         smsRealtimeClient?.disconnect()
         smsRealtimeClient = null
 
+        if (::deviceRealtimeManager.isInitialized) {
+            deviceRealtimeManager.stop()
+        }
+
+        mainHandler.removeCallbacks(liveStatusRunnable)
         mainHandler.removeCallbacksAndMessages(null)
         coroutineScope.cancel()
 
