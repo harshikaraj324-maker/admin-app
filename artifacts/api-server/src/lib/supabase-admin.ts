@@ -315,6 +315,10 @@ const KNOWN_COLUMNS = new Set([
  * Known columns → top-level DB columns.
  * Unknown/extra fields → deep-merged into data_json.
  * Uses service_role so no RLS issues.
+ *
+ * IMPORTANT: data_json is always MERGED (existing base + incoming overwrite),
+ * never replaced. This ensures device info (model, manufacturer, SIM numbers)
+ * persists across heartbeat updates.
  */
 export async function deviceSmartUpsert(
   appToken: string,
@@ -337,10 +341,39 @@ export async function deviceSmartUpsert(
     }
   }
 
-  // Merge extra fields into data_json
+  // ── Fetch existing data_json so we MERGE rather than replace ──────────────
+  // This preserves device info (model, manufacturer, SIM numbers etc.) across
+  // heartbeat / partial updates that only carry a subset of fields.
+  let existingDataJson: Record<string, unknown> = {};
+  try {
+    const existingRes = await fetch(
+      `${REST}/${encodeURIComponent(table)}?sub_id=eq.${encodeURIComponent(subId)}&select=data_json&limit=1`,
+      { headers: h() }
+    );
+    if (existingRes.ok) {
+      const arr = (await existingRes.json()) as Array<{
+        data_json?: Record<string, unknown>;
+      }>;
+      if (
+        arr.length > 0 &&
+        arr[0].data_json &&
+        typeof arr[0].data_json === "object"
+      ) {
+        existingDataJson = arr[0].data_json as Record<string, unknown>;
+      }
+    }
+  } catch {
+    /* new device — no existing row, start fresh */
+  }
+
+  // Merge: existing is the base, incoming fields overwrite selectively
   const incomingDataJson =
     (knownRow["data_json"] as Record<string, unknown> | null) ?? {};
-  knownRow["data_json"] = { ...incomingDataJson, ...extraFields };
+  knownRow["data_json"] = {
+    ...existingDataJson,   // ← keep all existing fields (model, SIMs, etc.)
+    ...incomingDataJson,   // ← payload's data_json overwrites where set
+    ...extraFields,        // ← flat unknown fields also land in data_json
+  };
 
   // Ensure required top-level fields
   knownRow["sub_id"] = subId;

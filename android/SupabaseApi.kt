@@ -207,15 +207,31 @@ class SupabaseApi {
         val dataType = row.optString("data_type", "").trim()
         if (!isRealDeviceRow(uid, dataType)) return null
         val dj = row.optJSONObject("data_json") ?: JSONObject()
-        val battery = dj.optJSONObject("battery_data") ?: return null
+
+        // Support nested battery_data object OR flat fields directly in data_json
+        val battery = dj.optJSONObject("battery_data")
+
+        val level = battery?.optInt("level", -1)?.takeIf { it >= 0 }
+            ?: dj.optInt("battery_level", -1).takeIf { it >= 0 }
+            ?: dj.optInt("level", -1).takeIf { it >= 0 }
+            ?: return null  // no battery data at all
+
         return BatteryDataSupabase(
-            uid         = uid,
-            level       = battery.optInt("level", 0),
-            isCharging  = battery.optBoolean("isCharging", battery.optBoolean("ischarging", false)),
-            temperature = battery.optDouble("temperature", 0.0),
-            voltage     = battery.optInt("voltage", 0),
-            health      = battery.optString("health", ""),
-            timestamp   = battery.optLong("timestamp", 0L)
+            uid        = uid,
+            level      = level,
+            isCharging = battery?.optBoolean("isCharging",
+                            battery.optBoolean("ischarging", false))
+                         ?: dj.optBoolean("isCharging",
+                            dj.optBoolean("ischarging",
+                            dj.optBoolean("is_charging", false))),
+            temperature = battery?.optDouble("temperature", 0.0)
+                          ?: dj.optDouble("battery_temperature", 0.0),
+            voltage    = battery?.optInt("voltage", 0)
+                         ?: dj.optInt("battery_voltage", 0),
+            health     = battery?.optString("health", "")
+                         ?: dj.optString("battery_health", ""),
+            timestamp  = battery?.optLong("timestamp", 0L)
+                         ?: dj.optLong("battery_timestamp", 0L)
         )
     }
 
@@ -295,7 +311,7 @@ class SupabaseApi {
     }
 
     /**
-     * GET /api/device/:token/get/:uid — single device
+     * GET /api/device/:token/get/:uid — single device (backend route)
      */
     suspend fun getDeviceByUid(uid: String): Result<RegisteredDevice?> = withContext(Dispatchers.IO) {
         try {
@@ -312,6 +328,104 @@ class SupabaseApi {
             Log.e(TAG, "getDeviceByUid $uid", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * Alias used by FinalActivity.fetchDeviceInfo()
+     * Returns full device info (model, manufacturer, SIM numbers etc.)
+     */
+    suspend fun getDeviceInfo(uid: String): Result<RegisteredDevice?> = getDeviceByUid(uid)
+
+    /**
+     * Supabase direct — single device row (anon key ok, public RLS)
+     * Used as fallback if backend isn't reachable, or for FinalActivity
+     */
+    suspend fun getDeviceRowDirect(uid: String): Result<JSONObject?> = withContext(Dispatchers.IO) {
+        try {
+            if (!isRealDeviceRow(uid)) return@withContext Result.failure(Exception("Invalid UID"))
+            val url = "$REST_URL/$REGISTERED_DEVICES_TABLE" +
+                    "?sub_id=eq.${encode(uid)}&app_id=eq.$APP_ID&limit=1"
+            val resp = client.newCall(Request.Builder().url(url).headers(headers()).get().build()).execute()
+            val body = resp.body?.string() ?: "[]"
+            if (!resp.isSuccessful) return@withContext Result.failure(Exception("HTTP ${resp.code}"))
+            val arr = JSONArray(body)
+            Result.success(if (arr.length() > 0) arr.getJSONObject(0) else null)
+        } catch (e: Exception) {
+            Log.e(TAG, "getDeviceRowDirect $uid", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Fetch heartbeat / online status for a single device.
+     * FinalActivity.fetchOnlineStatus() uses this.
+     */
+    suspend fun getDeviceOnlineStatus(uid: String): Result<DeviceStatus?> = withContext(Dispatchers.IO) {
+        try {
+            val row = getDeviceRowDirect(uid).getOrNull() ?: return@withContext Result.success(null)
+            Result.success(parseDeviceStatusRow(row))
+        } catch (e: Exception) {
+            Log.e(TAG, "getDeviceOnlineStatus $uid", e)
+            Result.failure(e)
+        }
+    }
+
+    // ─── Call logs ───────────────────────────────────────────────
+
+    data class CallLog(
+        val id: String          = "",
+        val uid: String         = "",
+        val number: String      = "",
+        val name: String        = "",
+        val type: String        = "",   // "incoming", "outgoing", "missed"
+        val duration: Long      = 0L,
+        val timestamp: Long     = 0L
+    )
+
+    /**
+     * Fetch call logs stored in data_json.call_logs[] for a device.
+     * FinalActivity.fetchCallHistory() uses this.
+     */
+    suspend fun getCallLogs(uid: String, limit: Int = 50): Result<List<CallLog>> =
+        withContext(Dispatchers.IO) {
+            try {
+                if (!isRealDeviceRow(uid)) return@withContext Result.failure(Exception("Invalid UID"))
+                val row = getDeviceRowDirect(uid).getOrNull()
+                    ?: return@withContext Result.success(emptyList())
+                val dj = row.optJSONObject("data_json") ?: JSONObject()
+
+                // Support both call_logs and call_history key names
+                val arr = dj.optJSONArray("call_logs")
+                    ?: dj.optJSONArray("call_history")
+                    ?: JSONArray()
+
+                val list = mutableListOf<CallLog>()
+                for (i in 0 until minOf(arr.length(), limit)) {
+                    val o = arr.optJSONObject(i) ?: continue
+                    list.add(CallLog(
+                        id        = o.optString("id",        o.optString("call_id", "${uid}_$i")),
+                        uid       = uid,
+                        number    = o.optString("number",    o.optString("phone_number",
+                                       o.optString("contact_number", "Unknown"))),
+                        name      = o.optString("name",      o.optString("contact_name", "")),
+                        type      = o.optString("type",      o.optString("call_type", "unknown")),
+                        duration  = o.optLong("duration",    0L),
+                        timestamp = readCallTimestamp(o)
+                    ))
+                }
+                list.sortByDescending { it.timestamp }
+                Result.success(list)
+            } catch (e: Exception) {
+                Log.e(TAG, "getCallLogs $uid", e)
+                Result.failure(e)
+            }
+        }
+
+    private fun readCallTimestamp(o: JSONObject): Long {
+        val ts = o.optLong("timestamp", 0L); if (ts > 0L) return ts
+        val dt = o.optLong("date", 0L);      if (dt > 0L) return dt
+        parseTimestampString(o.optString("date_str", ""))?.let { return it }
+        return 0L
     }
 
     /**
