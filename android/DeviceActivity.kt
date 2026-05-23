@@ -254,11 +254,11 @@ class DeviceActivity : AppCompatActivity() {
 
         if (connected) {
             socketStatusDot.setBackgroundResource(R.drawable.green_circle)
-            socketStatusText.text = "Socket: Connected"
+            socketStatusText.text = "Connected"
             socketStatusText.setTextColor(Color.parseColor("#388E3C"))
         } else {
             socketStatusDot.setBackgroundResource(R.drawable.red_circle)
-            socketStatusText.text = "Socket: Disconnected"
+            socketStatusText.text = "Disconnected"
             socketStatusText.setTextColor(Color.parseColor("#D32F2F"))
         }
     }
