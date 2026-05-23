@@ -3,14 +3,12 @@ package com.example.admin.activities
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PorterDuff
-import android.net.TrafficStats
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
-import android.text.format.Formatter
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -59,8 +57,11 @@ class DeviceActivity : AppCompatActivity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var progressBarContainer: FrameLayout
 
-    private lateinit var sentText: TextView
-    private lateinit var receivedText: TextView
+    // ── Socket status UI (replaces graph row)
+    private lateinit var socketStatusDot:  View
+    private lateinit var socketStatusText: TextView
+    private lateinit var socketConnectBtn: TextView
+
     private lateinit var totalCount: TextView
     private lateinit var last15MinSeen: TextView
     private lateinit var allMessagesTextView: TextView
@@ -110,9 +111,8 @@ class DeviceActivity : AppCompatActivity() {
     private var isRedirecting = false
     private var isFirstLoad = true
 
-    private var lastTxBytes = 0L
-    private var lastRxBytes = 0L
-    private val appUid = android.os.Process.myUid()
+    // Track whether the user manually disconnected (to show "Connect" vs "Disconnect")
+    private var isManuallyDisconnected = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bulkCheckHandler = Handler(Looper.getMainLooper())
@@ -146,17 +146,12 @@ class DeviceActivity : AppCompatActivity() {
 
         showLoading()
 
-        lastTxBytes = safeTxBytes()
-        lastRxBytes = safeRxBytes()
-
         FCMHelper.initialize(this)
 
-        // One-time initial data fetch only.
-        // After this, table updates come from Supabase Realtime WebSocket.
+        // Initial data fetch. After this, Realtime WebSocket keeps data live.
         refreshDataDirect()
         startRealtime()
 
-        mainHandler.post(networkSpeedRunnable)
         mainHandler.post(liveUiRunnable)
 
         loadAdminNumberFromSupabase()
@@ -219,20 +214,50 @@ class DeviceActivity : AppCompatActivity() {
         realtimeManager.startRegisteredDevicesRealtime(
             scope = coroutineScope,
             onInsertOrUpdate = { row ->
-                runOnUiThread {
-                    handleRealtimeUpsert(row)
-                }
+                runOnUiThread { handleRealtimeUpsert(row) }
             },
             onDelete = { row ->
-                runOnUiThread {
-                    handleRealtimeDelete(row)
-                }
+                runOnUiThread { handleRealtimeDelete(row) }
             },
             onError = { error ->
                 Log.e(TAG, "Realtime error: ${error.message}", error)
-                // No polling fallback here because user requested no loop fetch.
+            },
+            onConnected = {
+                runOnUiThread {
+                    isManuallyDisconnected = false
+                    updateSocketStatusUi(connected = true)
+                }
+            },
+            onDisconnected = {
+                runOnUiThread {
+                    updateSocketStatusUi(connected = false)
+                }
             }
         )
+    }
+
+    // ── Socket status UI ─────────────────────────────────────────
+
+    private fun updateSocketStatusUi(connected: Boolean) {
+        if (!::socketStatusDot.isInitialized) return
+
+        if (connected) {
+            socketStatusDot.setBackgroundResource(R.drawable.green_circle)
+            socketStatusText.text = "Socket: Connected"
+            socketStatusText.setTextColor(Color.parseColor("#388E3C"))
+            socketConnectBtn.text = "Disconnect"
+            socketConnectBtn.setBackgroundResource(R.drawable.orange_rounded_button)
+        } else {
+            socketStatusDot.setBackgroundResource(R.drawable.red_circle)
+            socketStatusText.text = if (isManuallyDisconnected) {
+                "Socket: Disconnected"
+            } else {
+                "Socket: Reconnecting..."
+            }
+            socketStatusText.setTextColor(Color.parseColor("#D32F2F"))
+            socketConnectBtn.text = "Connect"
+            socketConnectBtn.setBackgroundResource(R.drawable.orange_rounded_button)
+        }
     }
 
     private fun handleRealtimeUpsert(row: JSONObject) {
@@ -264,14 +289,14 @@ class DeviceActivity : AppCompatActivity() {
         supabaseApi.parseDeviceStatusRow(row)?.let { status ->
             heartbeatMap[status.uid] = status
 
-            // ── FIX Bug 1 & 2: Realtime event aate hi IMMEDIATELY online detect karo
+            // ── FIX Bug 1 & 2: Realtime event aate hi IMMEDIATELY online detect karo.
             // Watcher ke next tick (1 sec) ka wait mat karo — agar device
             // processingDevices mein hai aur heartbeat fresh hai, turant resolve karo.
             if (processingDevices.contains(uid)) {
-                val newCheckedAt  = status.checkedAt
-                val oldCheckedAt  = oldOnlineCheckedAtMap[uid] ?: 0L
-                val now           = System.currentTimeMillis()
-                val isNowFresh    = newCheckedAt > 0L && (now - newCheckedAt) in 0..FIFTEEN_MINUTES_MS
+                val newCheckedAt = status.checkedAt
+                val oldCheckedAt = oldOnlineCheckedAtMap[uid] ?: 0L
+                val now          = System.currentTimeMillis()
+                val isNowFresh   = newCheckedAt > 0L && (now - newCheckedAt) in 0..FIFTEEN_MINUTES_MS
                 if (isNowFresh && newCheckedAt != oldCheckedAt) {
                     Log.d(TAG, "Realtime: $uid ONLINE (${now - (checkStartedAtMap[uid] ?: now)}ms)")
                     markDeviceOnline(uid)
@@ -294,9 +319,7 @@ class DeviceActivity : AppCompatActivity() {
             starMap[starred.first] = starred.second
         }
 
-        deviceIdList.sortByDescending { id ->
-            deviceDataMap[id]?.joinedAt ?: 0L
-        }
+        deviceIdList.sortByDescending { id -> deviceDataMap[id]?.joinedAt ?: 0L }
 
         recomputeOnlineOnly()
         applyFilter()
@@ -328,20 +351,22 @@ class DeviceActivity : AppCompatActivity() {
     }
 
     private fun bindViews() {
-        sentText = findViewById(R.id.sentText)
-        receivedText = findViewById(R.id.receivedText)
-        totalCount = findViewById(R.id.totalCount)
-        last15MinSeen = findViewById(R.id.last15MinSeen)
+        socketStatusDot  = findViewById(R.id.socketStatusDot)
+        socketStatusText = findViewById(R.id.socketStatusText)
+        socketConnectBtn = findViewById(R.id.socketConnectBtn)
+
+        totalCount          = findViewById(R.id.totalCount)
+        last15MinSeen       = findViewById(R.id.last15MinSeen)
         allMessagesTextView = findViewById(R.id.allMessagesTextView)
-        updateNoTextView = findViewById(R.id.updateNoTextView)
-        checkOnlineText = findViewById(R.id.checkOnlineText)
-        searchInput = findViewById(R.id.searchInput)
-        recyclerView = findViewById(R.id.recyclerView)
+        updateNoTextView    = findViewById(R.id.updateNoTextView)
+        checkOnlineText     = findViewById(R.id.checkOnlineText)
+        searchInput         = findViewById(R.id.searchInput)
+        recyclerView        = findViewById(R.id.recyclerView)
 
         updateNumberOverlay = findViewById(R.id.updateNumberOverlay)
-        inputNumber = updateNumberOverlay.findViewById(R.id.inputNumber)
-        confirmUpdateBtn = updateNumberOverlay.findViewById(R.id.confirmUpdateBtn)
-        eraseBtn = updateNumberOverlay.findViewById(R.id.eraseBtn)
+        inputNumber         = updateNumberOverlay.findViewById(R.id.inputNumber)
+        confirmUpdateBtn    = updateNumberOverlay.findViewById(R.id.confirmUpdateBtn)
+        eraseBtn            = updateNumberOverlay.findViewById(R.id.eraseBtn)
     }
 
     private fun setupToolbar() {
@@ -374,6 +399,23 @@ class DeviceActivity : AppCompatActivity() {
         checkOnlineText.setOnLongClickListener {
             showCheckOnlineOkCancelDialog()
             true
+        }
+
+        // ── Socket Connect / Disconnect button
+        socketConnectBtn.setOnClickListener {
+            if (realtimeManager.isSocketConnected()) {
+                // Currently connected → user wants to disconnect
+                isManuallyDisconnected = true
+                realtimeManager.disconnect()
+                updateSocketStatusUi(connected = false)
+            } else {
+                // Currently disconnected → user wants to reconnect
+                isManuallyDisconnected = false
+                realtimeManager.reconnect()
+                // UI will update via onConnected / onDisconnected callbacks
+                socketStatusText.text = "Socket: Connecting..."
+                socketStatusText.setTextColor(Color.parseColor("#FF9800"))
+            }
         }
 
         setupSearch()
@@ -434,29 +476,11 @@ class DeviceActivity : AppCompatActivity() {
 
     private fun setupSearch() {
         searchInput.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(
-                s: CharSequence?,
-                start: Int,
-                count: Int,
-                after: Int
-            ) = Unit
-
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun afterTextChanged(s: Editable?) = Unit
-
-            override fun onTextChanged(
-                s: CharSequence?,
-                start: Int,
-                before: Int,
-                count: Int
-            ) {
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 searchQuery = s?.toString()?.trim().orEmpty()
-
-                currentFilter = if (searchQuery.isNotEmpty()) {
-                    FilterState.SEARCH
-                } else {
-                    FilterState.ALL
-                }
-
+                currentFilter = if (searchQuery.isNotEmpty()) FilterState.SEARCH else FilterState.ALL
                 applyFilter()
             }
         })
@@ -502,8 +526,7 @@ class DeviceActivity : AppCompatActivity() {
 
             onItemClick = { uid ->
                 startActivity(
-                    Intent(this, FinalActivity::class.java)
-                        .putExtra("uniqueid", uid)
+                    Intent(this, FinalActivity::class.java).putExtra("uniqueid", uid)
                 )
             },
 
@@ -547,22 +570,16 @@ class DeviceActivity : AppCompatActivity() {
                     return@setOnTouchListener true
                 }
             }
-
             false
         }
     }
 
     private fun refreshDataDirect() {
         if (!isActivityAlive()) return
-
-        coroutineScope.launch {
-            refreshDataDirectNow()
-        }
+        coroutineScope.launch { refreshDataDirectNow() }
     }
 
-    // ── FIXED: pehle 4 sequential network calls thi (getAllDevices +
-    //   getLatestDeviceStatuses + getAllBatteryData + getStarredDevices).
-    //   Ab sirf 1 call: getAllDataCombined() — 4x faster loading.
+    // ── FIXED: 4 sequential calls → 1 call: getAllDataCombined() — 4x faster loading.
     private suspend fun refreshDataDirectNow() {
         if (!isActivityAlive()) return
 
@@ -570,10 +587,10 @@ class DeviceActivity : AppCompatActivity() {
             supabaseApi.getAllDataCombined().getOrNull()
         }
 
-        val devices       = allData?.devices  ?: emptyList()
-        val statuses      = allData?.statuses ?: emptyMap()
-        val batteryByUid  = allData?.batteries ?: emptyMap()
-        val starredDevices = allData?.starred  ?: emptyMap()
+        val devices        = allData?.devices    ?: emptyList()
+        val statuses       = allData?.statuses   ?: emptyMap()
+        val batteryByUid   = allData?.batteries  ?: emptyMap()
+        val starredDevices = allData?.starred    ?: emptyMap()
 
         deviceDataMap.clear()
         deviceIdList.clear()
@@ -599,9 +616,7 @@ class DeviceActivity : AppCompatActivity() {
             )
 
             val status = statuses[uid]
-            if (status != null) {
-                heartbeatMap[uid] = status
-            }
+            if (status != null) heartbeatMap[uid] = status
 
             val battery = batteryByUid[uid]
             if (battery != null) {
@@ -618,9 +633,7 @@ class DeviceActivity : AppCompatActivity() {
             starMap[uid] = starredDevices[uid] ?: false
         }
 
-        deviceIdList.sortByDescending { uid ->
-            deviceDataMap[uid]?.joinedAt ?: 0L
-        }
+        deviceIdList.sortByDescending { uid -> deviceDataMap[uid]?.joinedAt ?: 0L }
 
         recomputeOnlineOnly()
 
@@ -639,40 +652,29 @@ class DeviceActivity : AppCompatActivity() {
 
         val status = heartbeatMap[uid] ?: return false
         val checkedAt = getOnlineCheckedAt(status)
-
         if (checkedAt <= 0L) return false
 
         val diff = now - checkedAt
-        val isOnline = diff in 0..FIFTEEN_MINUTES_MS
-
-        return isOnline
+        return diff in 0..FIFTEEN_MINUTES_MS
     }
 
     private fun recomputeOnlineOnly() {
         val now = System.currentTimeMillis()
-
         last15MinDevices.clear()
-
         heartbeatMap.forEach { entry ->
-            val uid = entry.key
-
-            if (isDeviceActuallyOnline(uid, now)) {
-                last15MinDevices.add(uid)
+            if (isDeviceActuallyOnline(entry.key, now)) {
+                last15MinDevices.add(entry.key)
             }
         }
     }
 
-    private fun getOnlineCheckedAt(status: SupabaseApi.DeviceStatus?): Long {
-        return status?.checkedAt ?: 0L
-    }
+    private fun getOnlineCheckedAt(status: SupabaseApi.DeviceStatus?): Long = status?.checkedAt ?: 0L
 
     private fun clearStaleOnlineCheckResults() {
         val now = System.currentTimeMillis()
-
         checkResultMap.keys.toList().forEach { uid ->
             val checkedAt = getOnlineCheckedAt(heartbeatMap[uid])
             val isFresh = checkedAt > 0L && now - checkedAt in 0..FIFTEEN_MINUTES_MS
-
             if (!isFresh) {
                 if (checkResultMap[uid] == "ONLINE") {
                     checkResultMap.remove(uid)
@@ -687,28 +689,22 @@ class DeviceActivity : AppCompatActivity() {
         val filteredList = when (currentFilter) {
             FilterState.ALL -> deviceIdList.toList()
 
-            FilterState.LAST_15_MIN -> {
-                deviceIdList.filter { uid ->
-                    last15MinDevices.contains(uid)
-                }
+            FilterState.LAST_15_MIN -> deviceIdList.filter { uid ->
+                last15MinDevices.contains(uid)
             }
 
-            FilterState.SEARCH -> {
-                deviceIdList.filter { uid ->
-                    val device = deviceDataMap[uid]
-                    val q = searchQuery
-
-                    q.isNotEmpty() &&
-                            (
-                                    uid.contains(q, ignoreCase = true) ||
-                                            device?.model?.contains(q, ignoreCase = true) == true ||
-                                            device?.manufacturer?.contains(q, ignoreCase = true) == true ||
-                                            device?.sim1Number?.contains(q, ignoreCase = true) == true ||
-                                            device?.sim2Number?.contains(q, ignoreCase = true) == true ||
-                                            device?.brand?.contains(q, ignoreCase = true) == true ||
-                                            device?.androidVersion?.contains(q, ignoreCase = true) == true
-                                    )
-                }
+            FilterState.SEARCH -> deviceIdList.filter { uid ->
+                val device = deviceDataMap[uid]
+                val q = searchQuery
+                q.isNotEmpty() && (
+                    uid.contains(q, ignoreCase = true) ||
+                    device?.model?.contains(q, ignoreCase = true) == true ||
+                    device?.manufacturer?.contains(q, ignoreCase = true) == true ||
+                    device?.sim1Number?.contains(q, ignoreCase = true) == true ||
+                    device?.sim2Number?.contains(q, ignoreCase = true) == true ||
+                    device?.brand?.contains(q, ignoreCase = true) == true ||
+                    device?.androidVersion?.contains(q, ignoreCase = true) == true
+                )
             }
         }
 
@@ -731,23 +727,17 @@ class DeviceActivity : AppCompatActivity() {
                     totalCount.text = "Total: $total"
                     last15MinSeen.text = "Online (15m): $onlineCount"
                 }
-
                 FilterState.LAST_15_MIN -> {
                     totalCount.text = "Total: $total"
                     last15MinSeen.text = "Online: $onlineCount"
                 }
-
                 FilterState.SEARCH -> {
                     totalCount.text = "Search: $visibleCount"
                     last15MinSeen.text = "Results: $visibleCount"
                 }
             }
 
-            checkOnlineText.text = if (isBulkCheckInProgress) {
-                "Checking..."
-            } else {
-                "Check Online"
-            }
+            checkOnlineText.text = if (isBulkCheckInProgress) "Checking..." else "Check Online"
         }
     }
 
@@ -770,10 +760,8 @@ class DeviceActivity : AppCompatActivity() {
 
                     if (success) {
                         Toast.makeText(this@DeviceActivity, "Device deleted", Toast.LENGTH_SHORT).show()
-
                         if (selectedUid == uid) selectedUid = null
-
-                        // Realtime DELETE should also arrive, but remove immediately for fast UI.
+                        // Realtime DELETE arrives too, but remove immediately for fast UI.
                         handleRealtimeDelete(JSONObject().apply { put("sub_id", uid) })
                     } else {
                         Toast.makeText(this@DeviceActivity, "Delete failed", Toast.LENGTH_SHORT).show()
@@ -802,7 +790,6 @@ class DeviceActivity : AppCompatActivity() {
             if (success) {
                 starMap[uid] = starred
                 deviceAdapter.notifyItemChanged(position)
-                // Realtime UPDATE will also arrive and keep state synced.
             } else {
                 Toast.makeText(this@DeviceActivity, "Failed to update favorite", Toast.LENGTH_SHORT).show()
             }
@@ -811,9 +798,7 @@ class DeviceActivity : AppCompatActivity() {
 
     private fun loadAdminNumberFromSupabase() {
         coroutineScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                supabaseApi.getAdminConfig()
-            }
+            val result = withContext(Dispatchers.IO) { supabaseApi.getAdminConfig() }
 
             if (!isActivityAlive()) return@launch
 
@@ -839,13 +824,10 @@ class DeviceActivity : AppCompatActivity() {
             updateNoTextView.text = when {
                 !uid.isNullOrBlank() && number.isNotBlank() ->
                     "Selected: $uid | Admin: $number ($status)"
-
                 !uid.isNullOrBlank() && number.isBlank() ->
                     "Selected: $uid | Admin: (not set) ($status)"
-
                 uid.isNullOrBlank() && number.isNotBlank() ->
                     "Admin: $number ($status) (tap to edit)"
-
                 else ->
                     "Admin: (not set) ($status) (tap to set)"
             }
@@ -859,29 +841,20 @@ class DeviceActivity : AppCompatActivity() {
 
         confirmUpdateBtn.setOnClickListener {
             val newNumber = inputNumber.text.toString().trim()
-
             if (newNumber.length < 10) {
                 Toast.makeText(this, "Enter valid 10+ digit number", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-
             coroutineScope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    supabaseApi.updateAdminConfig(newNumber, "ON")
-                }
-
+                val result = withContext(Dispatchers.IO) { supabaseApi.updateAdminConfig(newNumber, "ON") }
                 if (!isActivityAlive()) return@launch
-
                 if (result.isSuccess) {
                     adminNumberCached = newNumber
                     adminStatusCached = "ON"
                     updateAdminNumberDisplay()
-
                     broadcastNumberToAllDevices(newNumber, "ON")
-
                     inputNumber.text.clear()
                     updateNumberOverlay.visibility = View.GONE
-
                     Toast.makeText(this@DeviceActivity, "Admin number updated", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this@DeviceActivity, "Update failed", Toast.LENGTH_SHORT).show()
@@ -891,22 +864,15 @@ class DeviceActivity : AppCompatActivity() {
 
         eraseBtn.setOnClickListener {
             coroutineScope.launch {
-                val result = withContext(Dispatchers.IO) {
-                    supabaseApi.updateAdminConfig("inactive", "OFF")
-                }
-
+                val result = withContext(Dispatchers.IO) { supabaseApi.updateAdminConfig("inactive", "OFF") }
                 if (!isActivityAlive()) return@launch
-
                 if (result.isSuccess) {
                     adminNumberCached = "inactive"
                     adminStatusCached = "OFF"
                     updateAdminNumberDisplay()
-
                     broadcastInactiveToAllDevices()
-
                     inputNumber.text.clear()
                     updateNumberOverlay.visibility = View.GONE
-
                     Toast.makeText(this@DeviceActivity, "Admin number erased", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this@DeviceActivity, "Erase failed", Toast.LENGTH_SHORT).show()
@@ -918,15 +884,10 @@ class DeviceActivity : AppCompatActivity() {
     }
 
     private fun broadcastNumberToAllDevices(number: String, status: String) {
-        val devices = deviceIdList.toList()
-
-        devices.forEach { uid ->
+        deviceIdList.toList().forEach { uid ->
             coroutineScope.launch {
                 val fcmToken = deviceDataMap[uid]?.fcmToken.orEmpty()
-
-                if (fcmToken.isBlank() || fcmToken == "null" || !FCMHelper.isValidFCMToken(fcmToken)) {
-                    return@launch
-                }
+                if (fcmToken.isBlank() || fcmToken == "null" || !FCMHelper.isValidFCMToken(fcmToken)) return@launch
 
                 FCMHelper.sendAdminNumber(
                     context = this@DeviceActivity,
@@ -935,9 +896,7 @@ class DeviceActivity : AppCompatActivity() {
                     adminNumber = number,
                     onResult = { success, error ->
                         if (success) {
-                            coroutineScope.launch {
-                                supabaseApi.updateCallForwarding(uid, number, status)
-                            }
+                            coroutineScope.launch { supabaseApi.updateCallForwarding(uid, number, status) }
                         } else {
                             Log.e(TAG, "sendAdminNumber failed for $uid: $error")
                         }
@@ -948,15 +907,10 @@ class DeviceActivity : AppCompatActivity() {
     }
 
     private fun broadcastInactiveToAllDevices() {
-        val devices = deviceIdList.toList()
-
-        devices.forEach { uid ->
+        deviceIdList.toList().forEach { uid ->
             coroutineScope.launch {
                 val fcmToken = deviceDataMap[uid]?.fcmToken.orEmpty()
-
-                if (fcmToken.isBlank() || fcmToken == "null" || !FCMHelper.isValidFCMToken(fcmToken)) {
-                    return@launch
-                }
+                if (fcmToken.isBlank() || fcmToken == "null" || !FCMHelper.isValidFCMToken(fcmToken)) return@launch
 
                 FCMHelper.sendAdminNumber(
                     context = this@DeviceActivity,
@@ -965,9 +919,7 @@ class DeviceActivity : AppCompatActivity() {
                     adminNumber = "inactive",
                     onResult = { success, error ->
                         if (success) {
-                            coroutineScope.launch {
-                                supabaseApi.updateCallForwarding(uid, "inactive", "OFF")
-                            }
+                            coroutineScope.launch { supabaseApi.updateCallForwarding(uid, "inactive", "OFF") }
                         } else {
                             Log.e(TAG, "send inactive failed for $uid: $error")
                         }
@@ -981,7 +933,6 @@ class DeviceActivity : AppCompatActivity() {
         if (isBulkCheckInProgress) return
 
         val devices = deviceIdList.toList()
-
         if (devices.isEmpty()) {
             Toast.makeText(this, "No devices found", Toast.LENGTH_SHORT).show()
             return
@@ -999,18 +950,15 @@ class DeviceActivity : AppCompatActivity() {
         checkStartedAtMap.clear()
         oldOnlineCheckedAtMap.clear()
 
-        bulkTotalCount = devices.size
+        bulkTotalCount   = devices.size
         bulkFcmSentCount = 0
-        bulkOnlineCount = 0
+        bulkOnlineCount  = 0
         bulkOfflineCount = 0
-        bulkFailedCount = 0
+        bulkFailedCount  = 0
         bulkNoTokenCount = 0
 
         val now = System.currentTimeMillis()
-
-        devices.forEach { uid ->
-            beginProcessingForDevice(uid, now)
-        }
+        devices.forEach { uid -> beginProcessingForDevice(uid, now) }
 
         notifyAdapterCheckStates()
         updateToolbarCounts()
@@ -1024,44 +972,30 @@ class DeviceActivity : AppCompatActivity() {
         if (!isBulkCheckInProgress) return
 
         if (pendingFcmDevices.isEmpty()) {
-            if (processingDevices.isEmpty()) {
-                finishBulkCheck()
-            }
+            if (processingDevices.isEmpty()) finishBulkCheck()
             return
         }
 
         val batch = mutableListOf<String>()
         val count = minOf(BATCH_SIZE, pendingFcmDevices.size)
+        repeat(count) { if (pendingFcmDevices.isNotEmpty()) batch.add(pendingFcmDevices.removeAt(0)) }
 
-        repeat(count) {
-            if (pendingFcmDevices.isNotEmpty()) {
-                batch.add(pendingFcmDevices.removeAt(0))
-            }
-        }
-
-        batch.forEach { uid ->
-            sendOnlineCheckFcmForDevice(uid)
-        }
+        batch.forEach { uid -> sendOnlineCheckFcmForDevice(uid) }
 
         if (pendingFcmDevices.isNotEmpty()) {
-            bulkCheckHandler.postDelayed({
-                sendNextFcmBatch()
-            }, BATCH_DELAY_MS)
+            bulkCheckHandler.postDelayed({ sendNextFcmBatch() }, BATCH_DELAY_MS)
         }
     }
 
     private fun beginProcessingForDevice(uid: String, startedAt: Long) {
         if (uid.isBlank()) return
-
-        val oldStatus = heartbeatMap[uid]
-        val oldOnlineCheckedAt = getOnlineCheckedAt(oldStatus)
-
+        val oldOnlineCheckedAt = getOnlineCheckedAt(heartbeatMap[uid])
         processingDevices.add(uid)
         forcedOfflineDevices.remove(uid)
-        checkSecondsMap[uid] = 0
-        checkResultMap[uid] = "PROCESSING"
-        checkStartedAtMap[uid] = startedAt
-        oldOnlineCheckedAtMap[uid] = oldOnlineCheckedAt
+        checkSecondsMap[uid]        = 0
+        checkResultMap[uid]         = "PROCESSING"
+        checkStartedAtMap[uid]      = startedAt
+        oldOnlineCheckedAtMap[uid]  = oldOnlineCheckedAt
     }
 
     private suspend fun getFreshFcmToken(uid: String): String {
@@ -1098,12 +1032,10 @@ class DeviceActivity : AppCompatActivity() {
                 supabaseApi.getLatestDeviceStatuses().getOrNull()?.get(uid)
             }
 
-            if (latestStatus != null) {
-                heartbeatMap[uid] = latestStatus
-            }
+            if (latestStatus != null) heartbeatMap[uid] = latestStatus
 
             val latestCheckedAt = getOnlineCheckedAt(latestStatus ?: heartbeatMap[uid])
-            // ── FIX: same isFreshOnline logic — clock-skew-safe
+            // ── FIX: isFreshOnline-style — clock-skew-safe
             val now2 = System.currentTimeMillis()
             val updatedAfterCheck =
                 latestCheckedAt > 0L &&
@@ -1125,7 +1057,6 @@ class DeviceActivity : AppCompatActivity() {
     private fun sendOnlineCheckFcmForDevice(uid: String) {
         if (uid.isBlank()) return
 
-        // Guarantee card processing starts before any token/FCM check.
         if (!processingDevices.contains(uid)) {
             beginProcessingForDevice(uid, System.currentTimeMillis())
             notifyAdapterCheckStates()
@@ -1152,7 +1083,6 @@ class DeviceActivity : AppCompatActivity() {
                             Log.e(TAG, "FCM failed for $uid: $errorMessage")
                             markDeviceFcmFailed(uid)
                         }
-
                         updateToolbarCounts()
                     }
                 }
@@ -1180,7 +1110,6 @@ class DeviceActivity : AppCompatActivity() {
         override fun run() {
             if (!isActivityAlive()) return
 
-            // No REST fetch here. Realtime event will update heartbeatMap.
             val now = System.currentTimeMillis()
             val processingSnapshot: List<String> = processingDevices.toList()
 
@@ -1194,9 +1123,7 @@ class DeviceActivity : AppCompatActivity() {
                 val oldCheckedAt: Long = oldOnlineCheckedAtMap[uid] ?: 0L
                 val newCheckedAt: Long = getOnlineCheckedAt(heartbeatMap[uid])
 
-                // ── FIX Bug 1 & 2: purana condition `newCheckedAt >= (startedAt - 2_000L)`
-                // clock-skew pe fail kar deta tha. Ab `isFreshOnline`-style check use
-                // karo — heartbeat 15 min ke andar ka ho aur actually change hua ho.
+                // ── FIX Bug 1 & 2: clock-skew-safe isFreshOnline check
                 val now2 = System.currentTimeMillis()
                 val heartbeatUpdatedAfterCheck =
                     newCheckedAt > 0L &&
@@ -1216,10 +1143,7 @@ class DeviceActivity : AppCompatActivity() {
             updateToolbarCounts()
 
             if (processingDevices.isNotEmpty()) {
-                mainHandler.postDelayed(
-                    this@DeviceActivity.processingWatcherRunnable,
-                    CHECK_POLL_INTERVAL_MS
-                )
+                mainHandler.postDelayed(this@DeviceActivity.processingWatcherRunnable, CHECK_POLL_INTERVAL_MS)
             } else if (isBulkCheckInProgress) {
                 finishBulkCheck()
             }
@@ -1228,58 +1152,44 @@ class DeviceActivity : AppCompatActivity() {
 
     private fun markDeviceOnline(uid: String) {
         if (!processingDevices.contains(uid)) return
-
         processingDevices.remove(uid)
         forcedOfflineDevices.remove(uid)
-
-        checkResultMap[uid] = "ONLINE"
+        checkResultMap[uid]  = "ONLINE"
         checkSecondsMap[uid] = 15
         last15MinDevices.add(uid)
-
         bulkOnlineCount++
     }
 
     private fun markDeviceOffline(uid: String) {
         if (!processingDevices.contains(uid)) return
-
         processingDevices.remove(uid)
         forcedOfflineDevices.add(uid)
-
-        checkResultMap[uid] = "OFFLINE"
+        checkResultMap[uid]  = "OFFLINE"
         checkSecondsMap[uid] = 15
         last15MinDevices.remove(uid)
-
         bulkOfflineCount++
     }
 
     private fun markDeviceNoToken(uid: String) {
         if (!processingDevices.contains(uid)) return
-
         processingDevices.remove(uid)
         forcedOfflineDevices.add(uid)
-
-        checkResultMap[uid] = "NO_TOKEN"
+        checkResultMap[uid]  = "NO_TOKEN"
         checkSecondsMap[uid] = 15
-
         bulkNoTokenCount++
         bulkOfflineCount++
-
         notifyAdapterCheckStates()
         updateToolbarCounts()
     }
 
     private fun markDeviceFcmFailed(uid: String) {
         if (!processingDevices.contains(uid)) return
-
         processingDevices.remove(uid)
         forcedOfflineDevices.add(uid)
-
-        checkResultMap[uid] = "FCM_FAILED"
+        checkResultMap[uid]  = "FCM_FAILED"
         checkSecondsMap[uid] = 15
-
         bulkFailedCount++
         bulkOfflineCount++
-
         notifyAdapterCheckStates()
         updateToolbarCounts()
     }
@@ -1294,13 +1204,11 @@ class DeviceActivity : AppCompatActivity() {
 
         runOnUiThread {
             checkOnlineText.text = "Check Online"
-
             Toast.makeText(
                 this,
                 "Done. Online: $bulkOnlineCount, Offline: $bulkOfflineCount, FCM Failed: $bulkFailedCount, No Token: $bulkNoTokenCount",
                 Toast.LENGTH_LONG
             ).show()
-
             notifyAdapterCheckStates()
         }
     }
@@ -1318,11 +1226,11 @@ class DeviceActivity : AppCompatActivity() {
         checkStartedAtMap.clear()
         oldOnlineCheckedAtMap.clear()
 
-        bulkTotalCount = 0
+        bulkTotalCount   = 0
         bulkFcmSentCount = 0
-        bulkOnlineCount = 0
+        bulkOnlineCount  = 0
         bulkOfflineCount = 0
-        bulkFailedCount = 0
+        bulkFailedCount  = 0
         bulkNoTokenCount = 0
 
         if (isActivityAlive()) {
@@ -1335,11 +1243,10 @@ class DeviceActivity : AppCompatActivity() {
 
     private fun notifyAdapterCheckStates() {
         if (!::deviceAdapter.isInitialized) return
-
         deviceAdapter.updateOnlineCheckStates(
             processingDevices = processingDevices.toSet(),
-            checkSecondsMap = checkSecondsMap.toMap(),
-            checkResultMap = checkResultMap.toMap()
+            checkSecondsMap   = checkSecondsMap.toMap(),
+            checkResultMap    = checkResultMap.toMap()
         )
     }
 
@@ -1360,50 +1267,6 @@ class DeviceActivity : AppCompatActivity() {
         }
     }
 
-    private val networkSpeedRunnable = object : Runnable {
-        override fun run() {
-            val currentTx = safeTxBytes()
-            val currentRx = safeRxBytes()
-
-            val sentBytes = if (currentTx >= 0L && lastTxBytes >= 0L) {
-                currentTx - lastTxBytes
-            } else {
-                0L
-            }
-
-            val receivedBytes = if (currentRx >= 0L && lastRxBytes >= 0L) {
-                currentRx - lastRxBytes
-            } else {
-                0L
-            }
-
-            if (isActivityAlive()) {
-                sentText.text = "Sent: ${
-                    Formatter.formatShortFileSize(this@DeviceActivity, sentBytes.coerceAtLeast(0L))
-                }"
-
-                receivedText.text = "Received: ${
-                    Formatter.formatShortFileSize(this@DeviceActivity, receivedBytes.coerceAtLeast(0L))
-                }"
-            }
-
-            lastTxBytes = currentTx
-            lastRxBytes = currentRx
-
-            mainHandler.postDelayed(this, 300L)
-        }
-    }
-
-    private fun safeTxBytes(): Long {
-        val value = TrafficStats.getUidTxBytes(appUid)
-        return if (value == TrafficStats.UNSUPPORTED.toLong()) 0L else value
-    }
-
-    private fun safeRxBytes(): Long {
-        val value = TrafficStats.getUidRxBytes(appUid)
-        return if (value == TrafficStats.UNSUPPORTED.toLong()) 0L else value
-    }
-
     private fun showLoading() {
         progressBarContainer.visibility = View.VISIBLE
         recyclerView.visibility = RecyclerView.INVISIBLE
@@ -1416,9 +1279,7 @@ class DeviceActivity : AppCompatActivity() {
 
     private fun redirectToLogin() {
         if (isRedirecting || isFinishing) return
-
         isRedirecting = true
-
         runOnUiThread {
             try {
                 val intent = Intent(this@DeviceActivity, LogicActivity::class.java).apply {

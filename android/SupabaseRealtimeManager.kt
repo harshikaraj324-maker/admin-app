@@ -15,23 +15,18 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * ══════════════════════════════════════════════════════════════
- *  SupabaseRealtimeManager.kt — Fixed
+ * SupabaseRealtimeManager — with connect/disconnect callbacks + public reconnect()
  *
- *  Fix: CHANNEL_ID const val → val
- *       (SupabaseApi.REGISTERED_DEVICES_TABLE is now a val getter,
- *        not a const val, so it can't be used in const val initializer)
- * ══════════════════════════════════════════════════════════════
- *
- *  Raw OkHttp WebSocket → Supabase Realtime for INSERT/UPDATE/DELETE
- *  No Ktor, no supabase-kt, no polling.
+ * Added:
+ *  - onConnected  callback → fires when WebSocket opens successfully
+ *  - onDisconnected callback → fires on failure OR clean close (while shouldReconnect)
+ *  - reconnect() public method → allows UI button to manually reconnect
+ *  - isSocketConnected() → exposes connection state to UI
  */
 class SupabaseRealtimeManager {
 
     companion object {
         private const val TAG = "SUPABASE_REALTIME_OKHTTP"
-
-        // ← FIX: was `const val` — but REGISTERED_DEVICES_TABLE is now a val getter, not const
         private val CHANNEL_ID get() = "realtime:public:${SupabaseApi.REGISTERED_DEVICES_TABLE}"
     }
 
@@ -55,6 +50,8 @@ class SupabaseRealtimeManager {
     private var onInsertOrUpdateCallback: ((JSONObject) -> Unit)? = null
     private var onDeleteCallback:         ((JSONObject) -> Unit)? = null
     private var onErrorCallback:          ((Throwable)  -> Unit)? = null
+    private var onConnectedCallback:      (() -> Unit)?           = null
+    private var onDisconnectedCallback:   (() -> Unit)?           = null
 
     // ─── Public API ───────────────────────────────────────────────
 
@@ -62,11 +59,62 @@ class SupabaseRealtimeManager {
         scope: CoroutineScope,
         onInsertOrUpdate: (JSONObject) -> Unit,
         onDelete:         (JSONObject) -> Unit,
-        onError:          (Throwable)  -> Unit
+        onError:          (Throwable)  -> Unit,
+        onConnected:      (() -> Unit)? = null,
+        onDisconnected:   (() -> Unit)? = null
     ) {
         onInsertOrUpdateCallback = onInsertOrUpdate
         onDeleteCallback         = onDelete
         onErrorCallback          = onError
+        onConnectedCallback      = onConnected
+        onDisconnectedCallback   = onDisconnected
+        connect()
+    }
+
+    /** Expose live connection state to UI */
+    fun isSocketConnected(): Boolean = isConnected
+
+    /**
+     * Manually disconnect the WebSocket.
+     * Auto-reconnect is disabled until reconnect() is called.
+     */
+    fun disconnect() {
+        try {
+            shouldReconnect = false
+            isConnected     = false
+
+            stopHeartbeat()
+            reconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+            reconnectRunnable = null
+
+            webSocket?.close(1000, "user disconnected")
+            webSocket = null
+
+            mainHandler.post { onDisconnectedCallback?.invoke() }
+            Log.d(TAG, "Manually disconnected")
+        } catch (e: Exception) {
+            Log.e(TAG, "disconnect error", e)
+        }
+    }
+
+    /**
+     * Manually reconnect after a disconnect() call.
+     * Also works if the socket dropped and auto-reconnect hasn't fired yet.
+     */
+    fun reconnect() {
+        Log.d(TAG, "Manual reconnect requested")
+        shouldReconnect  = true
+        reconnectAttempt = 0
+
+        // Cancel any pending auto-reconnect to avoid double connect
+        reconnectRunnable?.let { mainHandler.removeCallbacks(it) }
+        reconnectRunnable = null
+
+        // Close existing stale socket if any
+        webSocket?.close(1000, "manual reconnect")
+        webSocket  = null
+        isConnected = false
+
         connect()
     }
 
@@ -85,6 +133,8 @@ class SupabaseRealtimeManager {
             onInsertOrUpdateCallback = null
             onDeleteCallback         = null
             onErrorCallback          = null
+            onConnectedCallback      = null
+            onDisconnectedCallback   = null
 
             Log.d(TAG, "Realtime stopped")
         } catch (e: Exception) {
@@ -124,6 +174,7 @@ class SupabaseRealtimeManager {
             reconnectAttempt = 0
             joinChannel(webSocket)
             startHeartbeat()
+            mainHandler.post { onConnectedCallback?.invoke() }
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -135,7 +186,10 @@ class SupabaseRealtimeManager {
             isConnected                          = false
             this@SupabaseRealtimeManager.webSocket = null
             stopHeartbeat()
-            mainHandler.post { onErrorCallback?.invoke(t) }
+            mainHandler.post {
+                onErrorCallback?.invoke(t)
+                onDisconnectedCallback?.invoke()
+            }
             scheduleReconnect()
         }
 
@@ -144,7 +198,11 @@ class SupabaseRealtimeManager {
             isConnected                          = false
             this@SupabaseRealtimeManager.webSocket = null
             stopHeartbeat()
-            if (shouldReconnect) scheduleReconnect()
+            // Only fire disconnected UI + auto-reconnect when not a manual stop
+            if (shouldReconnect) {
+                mainHandler.post { onDisconnectedCallback?.invoke() }
+                scheduleReconnect()
+            }
         }
     }
 
