@@ -78,3 +78,9 @@ id = "QN9V7quU5BkJDsjDzILW9"
 uri = "file://android/android-kotlin-files.zip"
 type = "unspecified"
 title = "Android Kotlin Files (Fixed)"
+
+[[outputs]]
+id = "K_vr_NJdjImHFlEuLXQlR"
+uri = "file://android/android-kotlin-files.tar.gz"
+type = "unspecified"
+title = "Android Kotlin Files — FCM Server-Side (Updated)"

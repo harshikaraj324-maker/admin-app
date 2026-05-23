@@ -232,6 +232,35 @@ export function genToken(): string {
   return `${word.toUpperCase()}-${suffix}`;
 }
 
+// ─── FCM ──────────────────────────────────────────────────
+
+export async function fcmCheckOnline(
+  token: string,
+  uid: string,
+  fcmToken: string
+): Promise<void> {
+  const res = await apiFetch(`/apps/${token}/fcm/check-online`, {
+    method: "POST",
+    body: JSON.stringify({ uid, fcmToken }),
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error ?? `HTTP ${res.status}`);
+  }
+}
+
+export async function fcmCheckOnlineAll(token: string): Promise<{
+  uid: string; ok: boolean; error?: string
+}[]> {
+  const res = await apiFetch(`/apps/${token}/fcm/check-online-all`, { method: "POST" });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(e.error ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { results: { uid: string; ok: boolean; error?: string }[] };
+  return data.results ?? [];
+}
+
 export async function fetchServerPat(): Promise<string> {
   try {
     const res = await fetch("/api/admin/pat");

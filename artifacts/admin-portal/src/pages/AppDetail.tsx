@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft, RefreshCw, Radio,
   ShieldOff, ShieldCheck, LogOut, Eye, EyeOff, Users, Key,
-  Smartphone
+  Smartphone, Wifi, WifiOff, Loader2, Send
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import type { AdminApp, Device } from "@/lib/types";
-import { getDevices, deleteDevice, upsertSysEntry, deleteAllSessions } from "@/lib/supabase";
+import { getDevices, deleteDevice, upsertSysEntry, deleteAllSessions, fcmCheckOnline, fcmCheckOnlineAll } from "@/lib/supabase";
 
 interface AppDetailProps {
   app: AdminApp;
@@ -34,6 +34,10 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
   const [blockBusy, setBlockBusy] = useState(false);
   const [busySessionId, setBusySessionId] = useState<string | null>(null);
   const [adminMsg, setAdminMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [fcmBusyUid, setFcmBusyUid] = useState<string | null>(null);
+  const [fcmBulkBusy, setFcmBulkBusy] = useState(false);
+  const [fcmResults, setFcmResults] = useState<Record<string, "sent" | "failed" | "no_token">>({});
 
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -146,6 +150,43 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Error"); }
     finally { setBusySessionId(null); }
   };
+
+  const handleFcmCheckOne = async (uid: string, fcmToken: string) => {
+    if (!fcmToken) {
+      setFcmResults((r) => ({ ...r, [uid]: "no_token" }));
+      return;
+    }
+    setFcmBusyUid(uid);
+    try {
+      await fcmCheckOnline(app.token, uid, fcmToken);
+      setFcmResults((r) => ({ ...r, [uid]: "sent" }));
+    } catch {
+      setFcmResults((r) => ({ ...r, [uid]: "failed" }));
+    } finally {
+      setFcmBusyUid(null);
+    }
+  };
+
+  const handleFcmCheckAll = async () => {
+    setFcmBulkBusy(true);
+    setFcmResults({});
+    try {
+      const results = await fcmCheckOnlineAll(app.token);
+      const map: Record<string, "sent" | "failed" | "no_token"> = {};
+      for (const r of results) {
+        map[r.uid] = r.ok ? "sent" : r.error === "no_token" ? "no_token" : "failed";
+      }
+      setFcmResults(map);
+      const sent = results.filter((r) => r.ok).length;
+      showMsg(true, `FCM sent to ${sent}/${results.length} devices via server`);
+    } catch (e: unknown) {
+      showMsg(false, e instanceof Error ? e.message : "FCM broadcast failed");
+    } finally {
+      setFcmBulkBusy(false);
+    }
+  };
+
+  const realDevices = devices.filter((d) => !isSystemEntry(d));
 
   // System entries only
   const sysEntries = devices.filter(isSystemEntry);
@@ -351,6 +392,92 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
                 </div>
               </div>
             )}
+
+            {/* ── FCM Device Ping ─────────────────────────────── */}
+            <div className="bg-[#0d1220] border border-slate-800/80 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 border-b border-slate-800/60 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Wifi className="w-3.5 h-3.5 text-blue-400" />
+                  <p className="text-sm font-medium text-white">FCM — Check Online</p>
+                  <span className="text-[10px] text-slate-600 bg-slate-800/60 px-1.5 py-0.5 rounded-full">
+                    server-side
+                  </span>
+                </div>
+                <button
+                  onClick={() => void handleFcmCheckAll()}
+                  disabled={fcmBulkBusy || realDevices.length === 0}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800/40 text-blue-400 font-medium transition-colors disabled:opacity-40"
+                >
+                  {fcmBulkBusy
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Send className="w-3.5 h-3.5" />}
+                  Ping All ({realDevices.length})
+                </button>
+              </div>
+
+              {realDevices.length === 0 ? (
+                <div className="px-4 py-6 text-center text-xs text-slate-600">
+                  No registered devices yet
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-800/40">
+                  {realDevices.map((d) => {
+                    const dj = d.data_json as unknown as Record<string, unknown>;
+                    const fcmToken = ((dj?.fcm_token ?? dj?.fcmToken ?? "") as string).trim();
+                    const model = ((dj?.model ?? dj?.brand ?? "") as string).trim() || d.sub_id;
+                    const sim1 = (dj?.sim1Number ?? dj?.sim_1_number ?? "") as string;
+                    const checkedAt = ((d as unknown as Record<string, unknown>)?.last_heartbeat_at ?? 0) as number;
+                    const isRecent = checkedAt > 0 && Date.now() - checkedAt < 15 * 60 * 1000;
+                    const res = fcmResults[d.sub_id];
+                    const isBusy = fcmBusyUid === d.sub_id;
+                    const hasToken = fcmToken.length > 50;
+
+                    return (
+                      <div key={d.sub_id} className="flex items-center gap-3 px-4 py-3">
+                        <Smartphone className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-slate-200 truncate">{model}</p>
+                          <p className="text-[10px] text-slate-600 truncate font-mono">
+                            {d.sub_id}{sim1 ? ` · ${sim1}` : ""}
+                          </p>
+                          <p className={`text-[10px] mt-0.5 ${hasToken ? "text-emerald-600" : "text-slate-700"}`}>
+                            {hasToken ? "FCM token ✓" : "No FCM token"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {isRecent && (
+                            <span className="flex items-center gap-1 text-[10px] text-emerald-500">
+                              <Wifi className="w-3 h-3" /> Online
+                            </span>
+                          )}
+                          {res === "sent" && !isBusy && (
+                            <span className="text-[10px] text-blue-400">Sent ✓</span>
+                          )}
+                          {res === "no_token" && !isBusy && (
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500">
+                              <WifiOff className="w-3 h-3" /> No token
+                            </span>
+                          )}
+                          {res === "failed" && !isBusy && (
+                            <span className="text-[10px] text-red-400">Failed</span>
+                          )}
+                          <button
+                            onClick={() => void handleFcmCheckOne(d.sub_id, fcmToken)}
+                            disabled={isBusy || fcmBulkBusy || !hasToken}
+                            title={hasToken ? "Send CHECK_ONLINE via server" : "No FCM token"}
+                            className="p-1.5 rounded-lg hover:bg-blue-900/30 text-slate-600 hover:text-blue-400 transition-colors disabled:opacity-30"
+                          >
+                            {isBusy
+                              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              : <Send className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

