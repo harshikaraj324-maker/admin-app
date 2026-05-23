@@ -227,11 +227,17 @@ class DeviceActivity : AppCompatActivity() {
                 runOnUiThread {
                     isManuallyDisconnected = false
                     updateSocketStatusUi(connected = true)
+                    Toast.makeText(this@DeviceActivity, "✓ Socket Connected", Toast.LENGTH_SHORT).show()
                 }
             },
             onDisconnected = {
                 runOnUiThread {
                     updateSocketStatusUi(connected = false)
+                    if (!isManuallyDisconnected) {
+                        Toast.makeText(this@DeviceActivity, "✗ Socket Disconnected — Reconnecting...", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@DeviceActivity, "✗ Socket Disconnected", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         )
@@ -425,6 +431,7 @@ class DeviceActivity : AppCompatActivity() {
             isManuallyDisconnected = false
             socketStatusText.text = "Socket: Connecting..."
             socketStatusText.setTextColor(Color.parseColor("#FF9800"))
+            Toast.makeText(this, "Socket: Connecting...", Toast.LENGTH_SHORT).show()
             realtimeManager.reconnect()
         }
 
