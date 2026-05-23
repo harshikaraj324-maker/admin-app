@@ -60,7 +60,6 @@ class DeviceActivity : AppCompatActivity() {
     // ── Socket status UI (replaces graph row)
     private lateinit var socketStatusDot:  View
     private lateinit var socketStatusText: TextView
-    private lateinit var socketConnectBtn: TextView
     private lateinit var socketRefreshBtn: TextView
 
     private lateinit var totalCount: TextView
@@ -111,9 +110,6 @@ class DeviceActivity : AppCompatActivity() {
 
     private var isRedirecting = false
     private var isFirstLoad = true
-
-    // Track whether the user manually disconnected (to show "Connect" vs "Disconnect")
-    private var isManuallyDisconnected = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val bulkCheckHandler = Handler(Looper.getMainLooper())
@@ -225,7 +221,6 @@ class DeviceActivity : AppCompatActivity() {
             },
             onConnected = {
                 runOnUiThread {
-                    isManuallyDisconnected = false
                     updateSocketStatusUi(connected = true)
                     Toast.makeText(this@DeviceActivity, "✓ Socket Connected", Toast.LENGTH_SHORT).show()
                 }
@@ -233,11 +228,7 @@ class DeviceActivity : AppCompatActivity() {
             onDisconnected = {
                 runOnUiThread {
                     updateSocketStatusUi(connected = false)
-                    if (!isManuallyDisconnected) {
-                        Toast.makeText(this@DeviceActivity, "✗ Socket Disconnected — Reconnecting...", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(this@DeviceActivity, "✗ Socket Disconnected", Toast.LENGTH_SHORT).show()
-                    }
+                    Toast.makeText(this@DeviceActivity, "✗ Socket Disconnected — Reconnecting...", Toast.LENGTH_SHORT).show()
                 }
             }
         )
@@ -252,18 +243,10 @@ class DeviceActivity : AppCompatActivity() {
             socketStatusDot.setBackgroundResource(R.drawable.green_circle)
             socketStatusText.text = "Socket: Connected"
             socketStatusText.setTextColor(Color.parseColor("#388E3C"))
-            socketConnectBtn.text = "Disconnect"
-            socketConnectBtn.setBackgroundResource(R.drawable.orange_rounded_button)
         } else {
             socketStatusDot.setBackgroundResource(R.drawable.red_circle)
-            socketStatusText.text = if (isManuallyDisconnected) {
-                "Socket: Disconnected"
-            } else {
-                "Socket: Reconnecting..."
-            }
+            socketStatusText.text = "Socket: Disconnected"
             socketStatusText.setTextColor(Color.parseColor("#D32F2F"))
-            socketConnectBtn.text = "Connect"
-            socketConnectBtn.setBackgroundResource(R.drawable.orange_rounded_button)
         }
     }
 
@@ -360,7 +343,6 @@ class DeviceActivity : AppCompatActivity() {
     private fun bindViews() {
         socketStatusDot  = findViewById(R.id.socketStatusDot)
         socketStatusText = findViewById(R.id.socketStatusText)
-        socketConnectBtn = findViewById(R.id.socketConnectBtn)
         socketRefreshBtn = findViewById(R.id.socketRefreshBtn)
 
         totalCount          = findViewById(R.id.totalCount)
@@ -409,26 +391,8 @@ class DeviceActivity : AppCompatActivity() {
             true
         }
 
-        // ── Socket Connect / Disconnect button
-        socketConnectBtn.setOnClickListener {
-            if (realtimeManager.isSocketConnected()) {
-                // Currently connected → user wants to disconnect
-                isManuallyDisconnected = true
-                realtimeManager.disconnect()
-                updateSocketStatusUi(connected = false)
-            } else {
-                // Currently disconnected → user wants to reconnect
-                isManuallyDisconnected = false
-                realtimeManager.reconnect()
-                // UI will update via onConnected / onDisconnected callbacks
-                socketStatusText.text = "Socket: Connecting..."
-                socketStatusText.setTextColor(Color.parseColor("#FF9800"))
-            }
-        }
-
-        // ── Refresh icon — always forces a reconnect regardless of current state
+        // ── Refresh icon — force reconnect
         socketRefreshBtn.setOnClickListener {
-            isManuallyDisconnected = false
             socketStatusText.text = "Socket: Connecting..."
             socketStatusText.setTextColor(Color.parseColor("#FF9800"))
             Toast.makeText(this, "Socket: Connecting...", Toast.LENGTH_SHORT).show()
