@@ -450,18 +450,23 @@ class SupabaseApi {
     }
 
     /**
-     * DELETE /api/device/:token/delete/:uid — device delete karo
+     * DELETE /api/admin/apps/:token/devices/:uid
+     * Backend admin endpoint use karo — service role se actual hard-delete hota hai.
+     * Anon key se Supabase direct call nahi — DELETE policy anon pe nahi hai.
      */
     suspend fun deleteDevice(uid: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             if (!isRealDeviceRow(uid)) return@withContext Result.failure(Exception("Invalid device uid"))
-            // Backend delete endpoint (admin route se bhi ho sakta hai)
-            val url = "$REST_URL/$REGISTERED_DEVICES_TABLE?sub_id=eq.${encode(uid)}&app_id=eq.$APP_ID"
+            val url = "${Constants.ADMIN_API_BASE_URL}/devices/${encode(uid)}"
+            Log.d(TAG, "deleteDevice → DELETE $url")
             val resp = client.newCall(
-                Request.Builder().url(url).headers(deleteHeaders()).delete().build()
+                Request.Builder().url(url).delete("".toRequestBody(null)).build()
             ).execute()
-            resp.body?.close()
-            Result.success(resp.isSuccessful)
+            val body = resp.body?.string() ?: ""
+            Log.d(TAG, "deleteDevice response: ${resp.code} $body")
+            if (!resp.isSuccessful) return@withContext Result.failure(
+                Exception("deleteDevice HTTP ${resp.code}: $body"))
+            Result.success(true)
         } catch (e: Exception) {
             Log.e(TAG, "deleteDevice $uid", e)
             Result.failure(e)

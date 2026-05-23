@@ -21,6 +21,7 @@ object Constants {
     // NOTE: sirf domain rakho, /api/device/:token automatically lagate hain
     const val BACKEND_DOMAIN = "https://78ad8860-efb7-4153-9c84-8bf8f2bbd425-00-2gl0n91xz9krb.pike.replit.dev"
     val DEVICE_API_BASE_URL: String get() = "$BACKEND_DOMAIN/api/device/$APP_TOKEN"
+    val ADMIN_API_BASE_URL:  String get() = "$BACKEND_DOMAIN/api/admin/apps/$APP_TOKEN"
     //
     // Iska matlab:
     //   DEVICE_API_BASE_URL  = "https://DOMAIN/api/device/sncx8wob"
@@ -29,6 +30,9 @@ object Constants {
     //   upsert  → POST $DEVICE_API_BASE_URL/upsert
     //   data    → POST $DEVICE_API_BASE_URL/data
     //   ws      → WSS  DOMAIN/api/device/sncx8wob/ws   (https→wss)
+    //
+    //   ADMIN_API_BASE_URL   = "https://DOMAIN/api/admin/apps/sncx8wob"
+    //   delete device → DELETE $ADMIN_API_BASE_URL/devices/UID
 
     // ── Table name (auto-derived — mat badlo) ────────────────────
     val TABLE_NAME: String get() = "${APP_TOKEN}_registered_devices"
