@@ -100,8 +100,9 @@ router.delete("/apps/:id", async (req: Request, res: Response) => {
 // ─── Fix Realtime (realtime-only SQL, requires PAT) ───────────
 router.post("/apps/:token/fix-realtime", async (req: Request, res: Response) => {
   const token = req.params["token"] as string;
-  const { pat } = req.body as { pat?: string };
-  if (!pat?.trim()) {
+  const { pat: bodyPat } = req.body as { pat?: string };
+  const pat = bodyPat?.trim() || process.env["SUPABASE_PAT"]?.trim();
+  if (!pat) {
     res.status(400).json({ ok: false, error: "Supabase PAT required" });
     return;
   }
