@@ -169,6 +169,24 @@ export async function patchSysEntry(
   if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
 }
 
+export async function upsertSysEntry(
+  appToken: string,
+  subId: string,
+  dataType: string,
+  dataJson: Record<string, unknown>
+): Promise<void> {
+  const res = await apiFetch(`/apps/${appToken}/upsert-sys-entry`, {
+    method: "POST",
+    body: JSON.stringify({ sub_id: subId, data_type: dataType, data_json: dataJson }),
+  });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
+export async function deleteAllSessions(appToken: string): Promise<void> {
+  const res = await apiFetch(`/apps/${appToken}/sessions`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+}
+
 export async function deleteDevice(appToken: string, uid: string): Promise<void> {
   const res = await apiFetch(
     `/apps/${appToken}/devices/${encodeURIComponent(uid)}`,

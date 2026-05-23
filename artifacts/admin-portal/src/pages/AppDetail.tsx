@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import Badge from "@/components/Badge";
 import type { AdminApp, Device } from "@/lib/types";
-import { getDevices, deleteDevice, patchSysEntry } from "@/lib/supabase";
+import { getDevices, deleteDevice, upsertSysEntry, deleteAllSessions } from "@/lib/supabase";
 
 interface AppDetailProps {
   app: AdminApp;
@@ -85,31 +85,35 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     return new Date(n).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   };
 
-  const handleLogoutAll = async (uid: string) => {
-    if (!confirm("Force logout all active sessions?")) return;
+  const handleLogoutAll = async () => {
+    if (!confirm("Force logout all active sessions? Devices will be logged out within 60 seconds.")) return;
     setLogoutBusy(true);
     try {
-      await patchSysEntry(app.token, uid, { ts: Date.now(), action: "logout_all" });
-      showMsg(true, "Logout signal sent — all sessions will be logged out.");
+      const ts = Date.now();
+      await upsertSysEntry(app.token, "admin_logout_control", "logout_control", { logoutAllAt: ts });
+      await deleteAllSessions(app.token);
+      setDevices((prev) => prev.filter((d) => !d.sub_id.startsWith("admin_session_")));
+      showMsg(true, "Logout signal sent — all sessions will be logged out within 60 sec.");
+      void load();
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Failed"); }
     finally { setLogoutBusy(false); }
   };
 
-  const handleBlock = async (uid: string) => {
+  const handleBlock = async () => {
     if (!confirm("Block admin login? The app will show 'Access expired'.")) return;
     setBlockBusy(true);
     try {
-      await patchSysEntry(app.token, uid, { end_at: Date.now() - 1000, blocked: true, blocked_at: Date.now() });
+      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", { end_at: Date.now() - 1000, blocked: true, blocked_at: Date.now() });
       showMsg(true, "Login blocked. Admin app will be denied access.");
       void load();
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Failed"); }
     finally { setBlockBusy(false); }
   };
 
-  const handleUnblock = async (uid: string) => {
+  const handleUnblock = async () => {
     setBlockBusy(true);
     try {
-      await patchSysEntry(app.token, uid, { end_at: Date.now() + 30 * 24 * 60 * 60 * 1000, blocked: false, unblocked_at: Date.now() });
+      await upsertSysEntry(app.token, "admin_expiry_main", "expiry", { end_at: Date.now() + 30 * 24 * 60 * 60 * 1000, blocked: false, unblocked_at: Date.now() });
       showMsg(true, "Login unblocked — access restored for 30 days.");
       void load();
     } catch (e: unknown) { showMsg(false, e instanceof Error ? e.message : "Failed"); }
@@ -142,7 +146,7 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
     : "No data";
 
   const lastLogoutTs = logoutEntry
-    ? (logoutEntry.data_json as unknown as Record<string, unknown>)?.ts
+    ? (logoutEntry.data_json as unknown as Record<string, unknown>)?.logoutAllAt
     : undefined;
 
   return (
@@ -179,12 +183,6 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
           <div className="text-center py-16 bg-[#0d1220] border border-slate-800 rounded-2xl">
             <p className="text-sm text-red-400 mb-2">{error}</p>
             <button onClick={load} className="text-xs text-blue-400 hover:text-blue-300">Retry</button>
-          </div>
-        ) : sysEntries.length === 0 ? (
-          <div className="text-center py-20 bg-[#0d1220] border border-slate-800 rounded-2xl">
-            <Smartphone className="w-8 h-8 mx-auto text-slate-700 mb-3" />
-            <p className="text-sm text-slate-600">No admin control data found for this app.</p>
-            <p className="text-xs text-slate-700 mt-1">Login to the admin app once to initialise.</p>
           </div>
         ) : (
           <>
@@ -224,39 +222,35 @@ export default function AppDetail({ app, onBack }: AppDetailProps) {
               </div>
             )}
 
-            {/* Action buttons */}
+            {/* Action buttons — always visible */}
             <div className="grid grid-cols-2 gap-2">
               {/* Block / Unblock */}
-              {expiryEntry && (
-                isBlocked ? (
-                  <button onClick={() => void handleUnblock(expiryEntry.sub_id)} disabled={blockBusy}
-                          className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-900/20 hover:bg-emerald-900/35 border border-emerald-800/30 text-emerald-400 text-sm font-semibold transition-colors disabled:opacity-50">
-                    {blockBusy
-                      ? <span className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
-                      : <ShieldCheck className="w-4 h-4" />}
-                    Unblock Login
-                  </button>
-                ) : (
-                  <button onClick={() => void handleBlock(expiryEntry.sub_id)} disabled={blockBusy}
-                          className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-red-900/20 hover:bg-red-900/35 border border-red-800/30 text-red-400 text-sm font-semibold transition-colors disabled:opacity-50">
-                    {blockBusy
-                      ? <span className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
-                      : <ShieldOff className="w-4 h-4" />}
-                    Block Login
-                  </button>
-                )
+              {isBlocked ? (
+                <button onClick={() => void handleUnblock()} disabled={blockBusy}
+                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-emerald-900/20 hover:bg-emerald-900/35 border border-emerald-800/30 text-emerald-400 text-sm font-semibold transition-colors disabled:opacity-50">
+                  {blockBusy
+                    ? <span className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+                    : <ShieldCheck className="w-4 h-4" />}
+                  Unblock Login
+                </button>
+              ) : (
+                <button onClick={() => void handleBlock()} disabled={blockBusy}
+                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-red-900/20 hover:bg-red-900/35 border border-red-800/30 text-red-400 text-sm font-semibold transition-colors disabled:opacity-50">
+                  {blockBusy
+                    ? <span className="w-4 h-4 border-2 border-red-400/30 border-t-red-400 rounded-full animate-spin" />
+                    : <ShieldOff className="w-4 h-4" />}
+                  Block Login
+                </button>
               )}
 
               {/* Force Logout All */}
-              {logoutEntry && (
-                <button onClick={() => void handleLogoutAll(logoutEntry.sub_id)} disabled={logoutBusy}
-                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-amber-900/20 hover:bg-amber-900/35 border border-amber-800/30 text-amber-400 text-sm font-semibold transition-colors disabled:opacity-50">
-                  {logoutBusy
-                    ? <span className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
-                    : <LogOut className="w-4 h-4" />}
-                  Logout All
-                </button>
-              )}
+              <button onClick={() => void handleLogoutAll()} disabled={logoutBusy}
+                      className="flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-amber-900/20 hover:bg-amber-900/35 border border-amber-800/30 text-amber-400 text-sm font-semibold transition-colors disabled:opacity-50">
+                {logoutBusy
+                  ? <span className="w-4 h-4 border-2 border-amber-400/30 border-t-amber-400 rounded-full animate-spin" />
+                  : <LogOut className="w-4 h-4" />}
+                Logout All
+              </button>
             </div>
 
             {/* Info grid */}

@@ -9,6 +9,8 @@ import {
   getDevices,
   patchDevice,
   deleteDevice,
+  upsertSysEntry,
+  deleteAllSessions,
   fixDeviceTable,
   runSqlViaMgmt,
 } from "../lib/supabase-admin.js";
@@ -183,6 +185,43 @@ router.delete(
     const uid = req.params["uid"] as string;
     try {
       await deleteDevice(token, uid);
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      res.status(500).json({ error: String(e) });
+    }
+  }
+);
+
+// ─── Sys entry upsert (creates if missing, updates if exists) ─
+router.post(
+  "/apps/:token/upsert-sys-entry",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    const { sub_id, data_type, data_json } = req.body as {
+      sub_id?: string;
+      data_type?: string;
+      data_json?: Record<string, unknown>;
+    };
+    if (!sub_id || !data_type || !data_json) {
+      res.status(400).json({ error: "sub_id, data_type, data_json required" });
+      return;
+    }
+    try {
+      await upsertSysEntry(token, sub_id, data_type, data_json);
+      res.json({ ok: true });
+    } catch (e: unknown) {
+      res.status(500).json({ error: String(e) });
+    }
+  }
+);
+
+// ─── Delete all session rows for an app ──────────────────────
+router.delete(
+  "/apps/:token/sessions",
+  async (req: Request, res: Response) => {
+    const token = req.params["token"] as string;
+    try {
+      await deleteAllSessions(token);
       res.json({ ok: true });
     } catch (e: unknown) {
       res.status(500).json({ error: String(e) });

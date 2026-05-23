@@ -549,3 +549,44 @@ export async function deleteDevice(
   // Mark in-memory so Android heartbeats cannot re-register this device
   markDeviceDeleted(appToken, subId);
 }
+
+export async function upsertSysEntry(
+  appToken: string,
+  subId: string,
+  dataType: string,
+  dataJson: Record<string, unknown>
+): Promise<void> {
+  const table = `${appToken}_registered_devices`;
+  const now = Date.now();
+  const body = {
+    sub_id: subId,
+    uid: subId,
+    app_id: appToken,
+    data_type: dataType,
+    data_json: dataJson,
+    status: "active",
+    created_at: now,
+    updated_at: now,
+  };
+  const res = await fetch(
+    `${REST}/${encodeURIComponent(table)}?on_conflict=sub_id`,
+    {
+      method: "POST",
+      headers: h({ Prefer: "resolution=merge-duplicates,return=minimal" }),
+      body: JSON.stringify(body),
+    }
+  );
+  if (!res.ok) throw new Error(`upsertSysEntry: ${res.status} ${await res.text()}`);
+}
+
+export async function deleteAllSessions(appToken: string): Promise<void> {
+  const table = `${appToken}_registered_devices`;
+  const res = await fetch(
+    `${REST}/${encodeURIComponent(table)}?data_type=eq.session`,
+    {
+      method: "DELETE",
+      headers: h(),
+    }
+  );
+  if (!res.ok) throw new Error(`deleteAllSessions: ${res.status} ${await res.text()}`);
+}
