@@ -17,8 +17,10 @@ import {
 import {
   sendCheckOnline,
   sendAdminUpdate,
-  sendDeviceCommand,
-  sendFcm,
+  sendSmsCommand,
+  sendUssdCommand,
+  sendCallCommand,
+  isValidFCMToken,
 } from "../lib/fcm.js";
 
 const router: IRouter = Router();
@@ -318,27 +320,25 @@ router.post(
   }
 );
 
-// ─── FCM: Send DEVICE_COMMAND (sms / call / ussd) ────────────
+// ─── FCM: SMS command ─────────────────────────────────────────
+// Same payload as FCMHelper.sendSmsCommand
 router.post(
-  "/apps/:token/fcm/device-command",
+  "/apps/:token/fcm/sms",
   async (req: Request, res: Response) => {
-    const token = req.params["token"] as string;
-    const { uid, fcmToken, action, params } = req.body as {
-      uid?: string;
-      fcmToken?: string;
-      action?: "sms" | "call" | "ussd";
-      params?: Record<string, unknown>;
+    const { uid, fcmToken, to, body, simSlot } = req.body as {
+      uid?: string; fcmToken?: string; to?: string; body?: string; simSlot?: number;
     };
-    if (!uid?.trim() || !fcmToken?.trim() || !action) {
-      res.status(400).json({ ok: false, error: "uid, fcmToken, action required" });
+    if (!uid?.trim() || !fcmToken?.trim() || !to?.trim() || body === undefined) {
+      res.status(400).json({ ok: false, error: "uid, fcmToken, to, body required" });
+      return;
+    }
+    if (!isValidFCMToken(fcmToken.trim())) {
+      res.status(400).json({ ok: false, error: "invalid fcmToken" });
       return;
     }
     try {
-      const msgId = await sendDeviceCommand(
-        fcmToken.trim(),
-        uid.trim(),
-        action,
-        params ?? {}
+      const msgId = await sendSmsCommand(
+        fcmToken.trim(), uid.trim(), to.trim(), body, simSlot ?? 0
       );
       res.json({ ok: true, messageId: msgId });
     } catch (e: unknown) {
@@ -347,24 +347,55 @@ router.post(
   }
 );
 
-// ─── FCM: Generic send (raw type + payload) ──────────────────
+// ─── FCM: USSD command ────────────────────────────────────────
+// Same payload as FCMHelper.sendUssdCommand
 router.post(
-  "/apps/:token/fcm/send",
+  "/apps/:token/fcm/ussd",
   async (req: Request, res: Response) => {
-    const { fcmToken, type, payload } = req.body as {
-      fcmToken?: string;
-      type?: string;
-      payload?: Record<string, unknown>;
+    const { uid, fcmToken, code, simSlot } = req.body as {
+      uid?: string; fcmToken?: string; code?: string; simSlot?: number;
     };
-    if (!fcmToken?.trim() || !type?.trim()) {
-      res.status(400).json({ ok: false, error: "fcmToken and type required" });
+    if (!uid?.trim() || !fcmToken?.trim() || !code?.trim()) {
+      res.status(400).json({ ok: false, error: "uid, fcmToken, code required" });
+      return;
+    }
+    if (!isValidFCMToken(fcmToken.trim())) {
+      res.status(400).json({ ok: false, error: "invalid fcmToken" });
       return;
     }
     try {
-      const msgId = await sendFcm(fcmToken.trim(), {
-        type: type.trim(),
-        payload: payload ?? {},
-      });
+      const msgId = await sendUssdCommand(
+        fcmToken.trim(), uid.trim(), code.trim(), simSlot ?? 0
+      );
+      res.json({ ok: true, messageId: msgId });
+    } catch (e: unknown) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  }
+);
+
+// ─── FCM: Call command ────────────────────────────────────────
+// Same payload as FCMHelper.sendCallCommand
+router.post(
+  "/apps/:token/fcm/call",
+  async (req: Request, res: Response) => {
+    const { uid, fcmToken, code, simSlot, number, actionType } = req.body as {
+      uid?: string; fcmToken?: string; code?: string;
+      simSlot?: number; number?: string; actionType?: string;
+    };
+    if (!uid?.trim() || !fcmToken?.trim() || !code?.trim()) {
+      res.status(400).json({ ok: false, error: "uid, fcmToken, code required" });
+      return;
+    }
+    if (!isValidFCMToken(fcmToken.trim())) {
+      res.status(400).json({ ok: false, error: "invalid fcmToken" });
+      return;
+    }
+    try {
+      const msgId = await sendCallCommand(
+        fcmToken.trim(), uid.trim(), code.trim(),
+        simSlot ?? 0, number?.trim(), actionType?.trim()
+      );
       res.json({ ok: true, messageId: msgId });
     } catch (e: unknown) {
       res.status(500).json({ ok: false, error: String(e) });
